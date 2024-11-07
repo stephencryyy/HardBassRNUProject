@@ -25,12 +25,12 @@ func main() {
 
 	// Инициализация сервисов и обработчиков
 	sessionService := services.NewSessionService(redisClient)
-	uploadHandler := handlers.NewStartHandler(sessionService)
-
+	startHandler := handlers.NewStartHandler(sessionService)
+	uploadChunkHandler := handlers.NewUploadChunkHandler(sessionService)
 	// Настройка маршрутов
 	router := mux.NewRouter()
-	router.HandleFunc("/upload/start", uploadHandler.StartSession).Methods("POST")
-
+	router.HandleFunc("/upload/start", startHandler.StartSession).Methods("POST")
+	router.HandleFunc("/upload/{session_id}/chunk", uploadChunkHandler.UploadChunk).Methods("POST")
 	// Запуск сервера
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)
 	log.Printf("Server is running on %s", addr)

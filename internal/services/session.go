@@ -102,11 +102,9 @@ func (s *SessionService) GetNextChunkID(sessionID string) (int, error) {
 
 	// Ищем максимальный существующий ID чанка
 	maxChunkID := -1
-	for _, chunk := range chunks {
-		if chunkID, ok := chunk["chunk_id"].(int); ok {
-			if chunkID > maxChunkID {
-				maxChunkID = chunkID
-			}
+	for _, chunkID := range chunks {
+		if chunkID > maxChunkID {
+			maxChunkID = chunkID
 		}
 	}
 
@@ -114,3 +112,5 @@ func (s *SessionService) GetNextChunkID(sessionID string) (int, error) {
 	nextChunkID := maxChunkID + 1
 	return nextChunkID, nil
 }
+
+var ErrChunkAlreadyExists = errors.New("chunk already exists")

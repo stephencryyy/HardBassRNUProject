@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/go-redis/redis/v8"
+	"strconv"
 )
 
 var ctx = context.Background()
@@ -65,4 +66,22 @@ func (r *RedisClient) GetSessionData(sessionID string) (map[string]interface{}, 
 	}
 
 	return sessionData, nil
+}
+
+// Метод GetChunks
+func (r *RedisClient) GetChunks(sessionID string) ([]int, error) {
+	setKey := fmt.Sprintf("%s:chunks", sessionID)
+	chunkIDsStr, err := r.Client.SMembers(ctx, setKey).Result()
+	if err != nil {
+		return nil, err
+	}
+	chunkIDs := []int{}
+	for _, idStr := range chunkIDsStr {
+		id, err := strconv.Atoi(idStr)
+		if err != nil {
+			continue
+		}
+		chunkIDs = append(chunkIDs, id)
+	}
+	return chunkIDs, nil
 }
