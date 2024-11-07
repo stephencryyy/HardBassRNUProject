@@ -1,7 +1,7 @@
 server:
-  port: 6382
+  port: 6379
 
 redis:
-  addr: "localhost:6379"
+  addr: "keydb:6379"
   password: ""
   db: 0
