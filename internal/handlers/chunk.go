@@ -4,14 +4,17 @@ import (
 	"BASProject/internal/services"
 	"encoding/json"
 	"fmt"
-	"github.com/gorilla/mux"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
+
+	"github.com/gorilla/mux"
 )
 
 type UploadChunkHandler struct {
 	SessionService *services.SessionService
+	MaxChunkSize   int
 }
 
 func NewUploadChunkHandler(sessionService *services.SessionService) *UploadChunkHandler {
@@ -21,16 +24,17 @@ func NewUploadChunkHandler(sessionService *services.SessionService) *UploadChunk
 }
 
 func (h *UploadChunkHandler) UploadChunk(w http.ResponseWriter, r *http.Request) {
-	// Получаем session_id из URL
+	// Логируем получение session_id
 	vars := mux.Vars(r)
 	sessionID := vars["session_id"]
+	log.Printf("Received session_id: %s", sessionID)
+
 	if sessionID == "" {
 		sendErrorResponse(w, http.StatusBadRequest, 400, "Missing session_id in URL.", nil, "")
 		return
 	}
 
-	// Чтение данных из multipart
-	err := r.ParseMultipartForm(10 * 1024 * 1024) // Максимальный размер формы 10MB
+	err := r.ParseMultipartForm(10 * 1024 * 1024)
 	if err != nil {
 		sendErrorResponse(w, http.StatusBadRequest, 400, "Error parsing multipart form.", nil, "")
 		return
@@ -56,35 +60,26 @@ func (h *UploadChunkHandler) UploadChunk(w http.ResponseWriter, r *http.Request)
 	}
 	defer chunkFile.Close()
 
-	// Читаем файл в []byte
 	fileData, err := io.ReadAll(chunkFile)
 	if err != nil {
 		sendErrorResponse(w, http.StatusInternalServerError, 500, "Failed to read chunk data.", err.Error(), "")
 		return
 	}
 
-	// Проверка размера чанка
-	maxChunkSize := 4 * 1024 * 1024 // 4MB
-	if len(fileData) > maxChunkSize {
-		sendErrorResponse(w, http.StatusRequestEntityTooLarge, 413, "Chunk size exceeds the allowed limit.", map[string]interface{}{
-			"max_chunk_size":      maxChunkSize,
-			"provided_chunk_size": len(fileData),
-		}, "Reduce the chunk size and resend.")
-		return
-	}
+	log.Printf("Read chunk data of size: %d bytes", len(fileData))
 
-	// Вычисляем контрольную сумму для чанка
-	isValidChecksum := h.SessionService.ChecksumService.ValidateChecksum(fileData, checksum)
+	// Проверка контрольной суммы через FileService
+	isValidChecksum := h.SessionService.FileService.ValidateChecksum(fileData, checksum)
+	log.Printf("Checksum valid: %v", isValidChecksum)
 	if !isValidChecksum {
 		sendErrorResponse(w, http.StatusPreconditionFailed, 412, "Checksum validation failed.", map[string]interface{}{
 			"expected_checksum": checksum,
-			"provided_checksum": h.SessionService.ChecksumService.CalculateChecksum(fileData),
+			"provided_checksum": h.SessionService.FileService.CalculateChecksum(fileData),
 		}, "Please resend the chunk with the correct data.")
 		return
 	}
 
-	// Сохраняем чанк
-	err = h.SessionService.SaveChunk(sessionID, chunkID, fileData)
+	err = h.SessionService.FileService.SaveChunk(sessionID, chunkID, fileData)
 	if err != nil {
 		if err == services.ErrChunkAlreadyExists {
 			sendErrorResponse(w, http.StatusConflict, 409, "Chunk already uploaded.", map[string]interface{}{
@@ -97,10 +92,10 @@ func (h *UploadChunkHandler) UploadChunk(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Ответ на успешную загрузку
 	nextChunkID := chunkID + 1
 
-	// Ответ клиенту
+	// Успешный ответ с логом
+	log.Printf("Chunk %d uploaded successfully. Next chunk_id: %d", chunkID, nextChunkID)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]interface{}{

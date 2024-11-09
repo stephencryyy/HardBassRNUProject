@@ -16,6 +16,10 @@ type Config struct {
 		Password string `yaml:"password"`
 		DB       int    `yaml:"db"`
 	} `yaml:"redis"`
+
+	Storage struct {
+		Path string `yaml:"path"`
+	} `yaml:"storage"`
 }
 
 func LoadConfig(path string) (*Config, error) {
