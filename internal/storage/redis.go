@@ -2,8 +2,9 @@ package storage
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-	"log"
+	"net/http"
 	"strconv"
 
 	"github.com/go-redis/redis/v8"
@@ -15,6 +16,7 @@ type RedisClient struct {
 	Client *redis.Client
 }
 
+// Конструктор для Redis-клиента
 func NewRedisClient(addr, password string, db int) *RedisClient {
 	rdb := redis.NewClient(&redis.Options{
 		Addr:     addr,
@@ -27,16 +29,38 @@ func NewRedisClient(addr, password string, db int) *RedisClient {
 	}
 }
 
-// Сохранение сессии
-func (s *RedisClient) SaveSession(sessionID string, sessionData map[string]interface{}) error {
-	log.Printf("Saving session %s with data: %v", sessionID, sessionData)
-	// Сохранение сессии в Redis...
+// Структура для JSON-ошибок
+type JSONError struct {
+	StatusCode int    `json:"status_code"`
+	ErrorCode  int    `json:"error_code"`
+	Message    string `json:"message"`
+	Details    string `json:"details,omitempty"`
+}
+
+// Функция для создания JSON-ошибок
+func NewJSONError(statusCode, errorCode int, message, details string) *JSONError {
+	return &JSONError{
+		StatusCode: statusCode,
+		ErrorCode:  errorCode,
+		Message:    message,
+		Details:    details,
+	}
+}
+
+// Метод для записи JSON-ошибки в ResponseWriter
+func (e *JSONError) WriteToResponse(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(e.StatusCode)
+	json.NewEncoder(w).Encode(e)
+}
+
+// Сохранение сессии с возвратом JSON-ошибки
+func (s *RedisClient) SaveSession(sessionID string, sessionData map[string]interface{}) *JSONError {
+	// Сохранение сессии в Redis
 	err := s.Client.HMSet(ctx, sessionID, sessionData).Err()
 	if err != nil {
-		log.Printf("Failed to save session %s: %v", sessionID, err)
-		return err
+		return NewJSONError(http.StatusInternalServerError, 500, "Failed to save session.", err.Error())
 	}
-	log.Printf("Session %s saved successfully", sessionID)
 	return nil
 }
 
@@ -88,7 +112,7 @@ func (r *RedisClient) GetSessionData(sessionID string) (map[string]interface{}, 
 	return sessionData, nil
 }
 
-// Метод GetChunks
+// Получение списка загруженных чанков
 func (r *RedisClient) GetChunks(sessionID string) ([]int, error) {
 	setKey := fmt.Sprintf("%s:chunks", sessionID)
 	chunkIDsStr, err := r.Client.SMembers(ctx, setKey).Result()
