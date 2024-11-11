@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"fmt"
+	"log"
 	"strconv"
 
 	"github.com/go-redis/redis/v8"
@@ -27,8 +28,16 @@ func NewRedisClient(addr, password string, db int) *RedisClient {
 }
 
 // Сохранение сессии
-func (r *RedisClient) SaveSession(sessionID string, data map[string]interface{}) error {
-	return r.Client.HSet(ctx, sessionID, data).Err()
+func (s *RedisClient) SaveSession(sessionID string, sessionData map[string]interface{}) error {
+	log.Printf("Saving session %s with data: %v", sessionID, sessionData)
+	// Сохранение сессии в Redis...
+	err := s.Client.HMSet(ctx, sessionID, sessionData).Err()
+	if err != nil {
+		log.Printf("Failed to save session %s: %v", sessionID, err)
+		return err
+	}
+	log.Printf("Session %s saved successfully", sessionID)
+	return nil
 }
 
 // Проверка, существует ли сессия
@@ -51,6 +60,7 @@ func (r *RedisClient) ChunkExists(sessionID string, chunkID int) (bool, error) {
 
 // Обновление загруженного объема данных в сессии
 func (r *RedisClient) UpdateUploadedSize(sessionID string, size int64) error {
+	// Используем HIncrBy, чтобы увеличить "uploaded_size" на заданное количество
 	return r.Client.HIncrBy(ctx, sessionID, "uploaded_size", size).Err()
 }
 
@@ -63,7 +73,16 @@ func (r *RedisClient) GetSessionData(sessionID string) (map[string]interface{}, 
 
 	sessionData := make(map[string]interface{})
 	for key, value := range data {
-		sessionData[key] = value
+		if key == "uploaded_size" {
+			// Преобразуем uploaded_size в целое число
+			if uploadedSize, err := strconv.ParseInt(value, 10, 64); err == nil {
+				sessionData[key] = uploadedSize
+			} else {
+				sessionData[key] = 0 // Если ошибка парсинга, ставим 0
+			}
+		} else {
+			sessionData[key] = value
+		}
 	}
 
 	return sessionData, nil
@@ -85,4 +104,22 @@ func (r *RedisClient) GetChunks(sessionID string) ([]int, error) {
 		chunkIDs = append(chunkIDs, id)
 	}
 	return chunkIDs, nil
+}
+
+// Получение sessionID по имени файла
+func (r *RedisClient) GetSessionIDByFileName(fileName string) (string, error) {
+	sessionIDKey := fmt.Sprintf("session:%s", fileName)
+	sessionID, err := r.Client.Get(ctx, sessionIDKey).Result()
+	if err == redis.Nil {
+		return "", nil // Сессия для этого файла не найдена
+	}
+	if err != nil {
+		return "", err // Ошибка при поиске сессии
+	}
+	return sessionID, nil
+}
+
+// Удаление сессии
+func (r *RedisClient) DeleteSession(sessionID string) error {
+	return r.Client.Del(ctx, sessionID).Err()
 }

@@ -7,4 +7,4 @@ redis:
   db: 0
 
 storage:
-  path: "tmp"
+  path: "./data"

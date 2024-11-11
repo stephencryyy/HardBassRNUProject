@@ -34,11 +34,11 @@ func (h *UploadChunkHandler) UploadChunk(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	err := r.ParseMultipartForm(10 * 1024 * 1024)
-	if err != nil {
-		sendErrorResponse(w, http.StatusBadRequest, 400, "Error parsing multipart form.", nil, "")
-		return
-	}
+	// err := r.ParseMultipartForm(10 * 1024 * 1024)
+	// if err != nil {
+	// 	sendErrorResponse(w, http.StatusBadRequest, 400, "Error parsing multipart form.", nil, "")
+	// 	return
+	// }
 
 	chunkIDStr := r.FormValue("chunk_id")
 	chunkID, err := strconv.Atoi(chunkIDStr)
@@ -56,6 +56,7 @@ func (h *UploadChunkHandler) UploadChunk(w http.ResponseWriter, r *http.Request)
 	chunkFile, _, err := r.FormFile("chunk_data")
 	if err != nil {
 		sendErrorResponse(w, http.StatusBadRequest, 400, "Error reading chunk data.", nil, "")
+		log.Println(err)
 		return
 	}
 	defer chunkFile.Close()

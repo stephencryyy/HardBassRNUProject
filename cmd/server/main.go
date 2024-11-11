@@ -14,7 +14,7 @@ import (
 )
 
 func main() {
-	// Чтение аргументов командной строки
+	// Параметры командной строки для порта и пути к хранилищу
 	port := flag.Int("port", 0, "Port for the server (overrides config)")
 	storagePath := flag.String("storage", "", "Path to storage (overrides config)")
 	flag.Parse()
@@ -25,7 +25,7 @@ func main() {
 		log.Fatalf("Error loading config: %v", err)
 	}
 
-	// Переопределение порта и пути хранилища при необходимости
+	// Переопределение значений конфигурации, если заданы аргументы
 	if *port != 0 {
 		cfg.Server.Port = *port
 	}
@@ -33,16 +33,10 @@ func main() {
 		cfg.Storage.Path = *storagePath
 	}
 
-	// Инициализация Redis
+	// Инициализация сервисов и обработчиков
 	redisClient := storage.NewRedisClient(cfg.Redis.Addr, cfg.Redis.Password, cfg.Redis.DB)
-
-	// Инициализация FileService с Redis клиентом и путем хранения
 	fileService := services.NewFileService(redisClient, cfg.Storage.Path)
-
-	// Инициализация SessionService с FileService
 	sessionService := services.NewSessionService(redisClient, fileService)
-
-	// Инициализация обработчиков
 	startHandler := handlers.NewStartHandler(sessionService)
 	uploadChunkHandler := handlers.NewUploadChunkHandler(sessionService)
 
@@ -50,6 +44,7 @@ func main() {
 	router := mux.NewRouter()
 	router.HandleFunc("/upload/start", startHandler.StartSession).Methods("POST")
 	router.HandleFunc("/upload/{session_id}/chunk", uploadChunkHandler.UploadChunk).Methods("POST")
+	router.HandleFunc("/upload/complete/{session_id}", uploadChunkHandler.CompleteUpload).Methods("POST")
 
 	// Запуск сервера
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)
