@@ -186,7 +186,7 @@ func extractChunkID(fileName string) int {
 func appendChunk(outputFile *os.File, chunkFilePath string) error {
 	chunkFile, err := os.Open(chunkFilePath)
 	if err != nil {
-		return fmt.Errorf("failed to open chunk file $s: %w", chunkFile, err)
+		return fmt.Errorf("failed to open chunk file %s: %w", chunkFile, err)
 	}
 	defer chunkFile.Close()
 
