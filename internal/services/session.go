@@ -82,24 +82,79 @@ func (s *SessionService) UpdateProgress(sessionID string, uploadedSize int64) er
 	return nil
 }
 
+var ErrSessionNotFound = errors.New("session not found")
+
 // Получение состояния загрузки для сессии
 func (s *SessionService) GetUploadStatus(sessionID string) (map[string]interface{}, error) {
+	// Проверяем, существует ли сессия
+	exists, err := s.Storage.SessionExists(sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check session existence: %w", err)
+	}
+	if exists == 0 {
+		return nil, ErrSessionNotFound
+	}
+
 	// Получаем данные сессии из Redis
 	sessionData, err := s.Storage.GetSessionData(sessionID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to retrieve session data: %w", err)
 	}
 
-	fileSize, _ := sessionData["file_size"].(int64)
-	uploadedSize, _ := sessionData["uploaded_size"].(int64)
-	isComplete := uploadedSize >= fileSize
+	// Извлекаем необходимые поля и приводим их к нужным типам
+	fileSize, ok := sessionData["file_size"].(int64)
+	if !ok {
+		return nil, fmt.Errorf("invalid type for file_size in session data")
+	}
+
+	uploadedSize, ok := sessionData["uploaded_size"].(int64)
+	if !ok {
+		return nil, fmt.Errorf("invalid type for uploaded_size in session data")
+	}
+
+	chunkSize, ok := sessionData["chunk_size"].(int64)
+	if !ok {
+		return nil, fmt.Errorf("invalid type for chunk_size in session data")
+	}
+
+	totalChunks := int((fileSize + chunkSize - 1) / chunkSize)
+
+	// Получаем список загруженных чанков
+	uploadedChunks, err := s.Storage.GetChunks(sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get uploaded chunks: %w", err)
+	}
+
+	// Определяем список ожидающих чанков
+	pendingChunks := []int{}
+	uploadedChunksMap := make(map[int]bool)
+	for _, chunkID := range uploadedChunks {
+		uploadedChunksMap[chunkID] = true
+	}
+
+	for i := 1; i <= totalChunks; i++ {
+		if !uploadedChunksMap[i] {
+			pendingChunks = append(pendingChunks, i)
+		}
+	}
+
+	isComplete := len(pendingChunks) == 0
+
+	message := "Upload is in progress."
+	if isComplete {
+		message = "Upload is complete."
+	}
 
 	status := map[string]interface{}{
-		"file_size":      fileSize,
-		"uploaded_size":  uploadedSize,
-		"completed":      isComplete,
-		"remaining_size": fileSize - uploadedSize,
-		"status":         sessionData["status"].(string),
+		"file_size":       fileSize,
+		"uploaded_size":   uploadedSize,
+		"completed":       isComplete,
+		"remaining_size":  fileSize - uploadedSize,
+		"status":          sessionData["status"].(string),
+		"uploaded_chunks": uploadedChunks,
+		"pending_chunks":  pendingChunks,
+		"total_chunks":    totalChunks,
+		"message":         message,
 	}
 
 	return status, nil

@@ -40,6 +40,15 @@ func (s *RedisClient) SaveSession(sessionID string, sessionData map[string]inter
 	return nil
 }
 
+// Получение числового значения поля сессии
+func (r *RedisClient) GetSessionIntField(sessionID string, field string) (int64, error) {
+	val, err := r.Client.HGet(ctx, sessionID, field).Result()
+	if err != nil {
+		return 0, err
+	}
+	return strconv.ParseInt(val, 10, 64)
+}
+
 // Проверка, существует ли сессия
 func (r *RedisClient) SessionExists(sessionID string) (int64, error) {
 	return r.Client.Exists(ctx, sessionID).Result()
@@ -48,7 +57,18 @@ func (r *RedisClient) SessionExists(sessionID string) (int64, error) {
 // Сохранение данных чанка
 func (r *RedisClient) SaveChunkData(sessionID string, chunkID int, chunkData []byte) error {
 	chunkKey := fmt.Sprintf("%s:chunk:%d", sessionID, chunkID)
+	// Добавляем chunkID в множество загруженных чанков
+	err := r.AddUploadedChunk(sessionID, chunkID)
+	if err != nil {
+		return err
+	}
 	return r.Client.Set(ctx, chunkKey, chunkData, 0).Err()
+}
+
+// Добавление chunkID в множество загруженных чанков
+func (r *RedisClient) AddUploadedChunk(sessionID string, chunkID int) error {
+	setKey := fmt.Sprintf("%s:chunks", sessionID)
+	return r.Client.SAdd(ctx, setKey, chunkID).Err()
 }
 
 // Проверка, загружен ли чанк
@@ -73,14 +93,14 @@ func (r *RedisClient) GetSessionData(sessionID string) (map[string]interface{}, 
 
 	sessionData := make(map[string]interface{})
 	for key, value := range data {
-		if key == "uploaded_size" {
-			// Преобразуем uploaded_size в целое число
-			if uploadedSize, err := strconv.ParseInt(value, 10, 64); err == nil {
-				sessionData[key] = uploadedSize
-			} else {
-				sessionData[key] = 0 // Если ошибка парсинга, ставим 0
+		switch key {
+		case "file_size", "uploaded_size", "chunk_size":
+			intVal, err := strconv.ParseInt(value, 10, 64)
+			if err != nil {
+				return nil, fmt.Errorf("invalid value for %s: %v", key, err)
 			}
-		} else {
+			sessionData[key] = intVal
+		default:
 			sessionData[key] = value
 		}
 	}
