@@ -39,12 +39,14 @@ func main() {
 	sessionService := services.NewSessionService(redisClient, fileService)
 	startHandler := handlers.NewStartHandler(sessionService)
 	uploadChunkHandler := handlers.NewUploadChunkHandler(sessionService)
+	statusHandler := handlers.NewStatusHandler(sessionService)
 
 	// Настройка маршрутов
 	router := mux.NewRouter()
 	router.HandleFunc("/upload/start", startHandler.StartSession).Methods("POST")
 	router.HandleFunc("/upload/{session_id}/chunk", uploadChunkHandler.UploadChunk).Methods("POST")
 	router.HandleFunc("/upload/complete/{session_id}", uploadChunkHandler.CompleteUpload).Methods("POST")
+	router.HandleFunc("/upload/status/{session_id}", statusHandler.GetUploadStatus).Methods("GET")
 
 	// Запуск сервера
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)
