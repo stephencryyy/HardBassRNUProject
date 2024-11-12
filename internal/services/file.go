@@ -171,8 +171,14 @@ func (fs *FileService) AssembleChunks(sessionID string, outputFilePath string) e
 // Вспомогательная функция для извлечения chunkID из имени файла
 func extractChunkID(fileName string) int {
 	parts := strings.Split(fileName, "_")
+	if len(parts) < 2 {
+		return 0 // Возвращаем 0, если формат имени файла некорректный
+	}
 	chunkIDStr := strings.TrimSuffix(parts[len(parts)-1], ".part")
-	chunkID, _ := strconv.Atoi(chunkIDStr)
+	chunkID, err := strconv.Atoi(chunkIDStr)
+	if err != nil {
+		return 0 // Возвращаем 0, если преобразование не удалось
+	}
 	return chunkID
 }
 
@@ -180,13 +186,13 @@ func extractChunkID(fileName string) int {
 func appendChunk(outputFile *os.File, chunkFilePath string) error {
 	chunkFile, err := os.Open(chunkFilePath)
 	if err != nil {
-		return fmt.Errorf("failed to open chunk file: %w", err)
+		return fmt.Errorf("failed to open chunk file $s: %w", chunkFile, err)
 	}
 	defer chunkFile.Close()
 
 	_, err = io.Copy(outputFile, chunkFile)
 	if err != nil {
-		return fmt.Errorf("failed to write chunk data: %w", err)
+		return fmt.Errorf("failed to write chunk data %s: %w", chunkFile, err)
 	}
 
 	return nil
