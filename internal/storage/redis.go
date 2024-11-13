@@ -140,6 +140,32 @@ func (r *RedisClient) GetSessionIDByFileName(fileName string) (string, error) {
 }
 
 // Удаление сессии
-func (r *RedisClient) DeleteSession(sessionID string) error {
-	return r.Client.Del(ctx, sessionID).Err()
+func (r *RedisClient) DeleteSessionData(sessionID string) error {
+	// Удаляем хэш сессии
+	err := r.Client.Del(ctx, sessionID).Err()
+	if err != nil {
+		return err
+	}
+
+	// Удаляем множество загруженных чанков
+	chunksSetKey := fmt.Sprintf("%s:chunks", sessionID)
+	err = r.Client.Del(ctx, chunksSetKey).Err()
+	if err != nil {
+		return err
+	}
+
+	// Удаляем ключи чанков (если вы сохраняете чанки в Redis)
+	chunkKeysPattern := fmt.Sprintf("%s:chunk:*", sessionID)
+	keys, err := r.Client.Keys(ctx, chunkKeysPattern).Result()
+	if err != nil {
+		return err
+	}
+	if len(keys) > 0 {
+		err = r.Client.Del(ctx, keys...).Err()
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

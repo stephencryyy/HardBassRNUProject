@@ -40,6 +40,7 @@ func main() {
 	startHandler := handlers.NewStartHandler(sessionService)
 	uploadChunkHandler := handlers.NewUploadChunkHandler(sessionService)
 	statusHandler := handlers.NewStatusHandler(sessionService)
+	deleteHandler := handlers.NewDeleteHandler(sessionService)
 
 	// Настройка маршрутов
 	router := mux.NewRouter()
@@ -47,6 +48,7 @@ func main() {
 	router.HandleFunc("/upload/{session_id}/chunk", uploadChunkHandler.UploadChunk).Methods("POST")
 	router.HandleFunc("/upload/complete/{session_id}", uploadChunkHandler.CompleteUpload).Methods("POST")
 	router.HandleFunc("/upload/status/{session_id}", statusHandler.GetUploadStatus).Methods("GET")
+	router.HandleFunc("/upload/{session_id}", deleteHandler.DeleteSession).Methods("DELETE")
 
 	// Запуск сервера
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)

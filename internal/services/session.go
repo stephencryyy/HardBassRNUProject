@@ -159,3 +159,29 @@ func (s *SessionService) GetUploadStatus(sessionID string) (map[string]interface
 
 	return status, nil
 }
+
+// Удаление сессии(6 этап)
+func (s *SessionService) DeleteSession(sessionID string) error {
+	// Проверяем, существует ли сессия
+	exists, err := s.Storage.SessionExists(sessionID)
+	if err != nil {
+		return fmt.Errorf("failed to check session existence: %w", err)
+	}
+	if exists == 0 {
+		return ErrSessionNotFound
+	}
+
+	// Удаляем данные сессии из Redis
+	err = s.Storage.DeleteSessionData(sessionID)
+	if err != nil {
+		return fmt.Errorf("failed to delete session data: %w", err)
+	}
+
+	// Удаляем файлы чанков с диска
+	err = s.FileService.DeleteChunks(sessionID)
+	if err != nil {
+		return fmt.Errorf("failed to delete chunk files: %w", err)
+	}
+
+	return nil
+}

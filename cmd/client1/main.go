@@ -16,7 +16,7 @@ import (
 
 func main() {
 	// Пример данных для отправки
-	filePath := "output_file"
+	filePath := "example.txt"
 
 	// Создание сессии
 	sessionID, chunkSize, err := createSession(filePath)
