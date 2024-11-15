@@ -10,10 +10,10 @@ import (
 )
 
 type StatusHandler struct {
-	SessionService *services.SessionService
+	SessionService services.ISessionService
 }
 
-func NewStatusHandler(sessionService *services.SessionService) *StatusHandler {
+func NewStatusHandler(sessionService services.ISessionService) *StatusHandler {
 	return &StatusHandler{
 		SessionService: sessionService,
 	}

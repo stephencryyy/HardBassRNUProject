@@ -12,6 +12,14 @@ type SessionService struct {
 	FileService *FileService
 }
 
+type ISessionService interface {
+    CreateSession(fileName string, fileSize int64) (string, int64, error)
+    GetUploadStatus(sessionID string) (map[string]interface{}, error)
+    UpdateProgress(sessionID string, uploadedSize int64) error
+	GetFileService() IFileService
+	DeleteSession(sessionID string) error // Добавьте метод
+}
+
 func NewSessionService(storage *storage.RedisClient, fileService *FileService) *SessionService {
 	return &SessionService{
 		Storage:     storage,
@@ -184,4 +192,8 @@ func (s *SessionService) DeleteSession(sessionID string) error {
 	}
 
 	return nil
+}
+
+func (s *SessionService) GetFileService() IFileService {
+    return s.FileService
 }

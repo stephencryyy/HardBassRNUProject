@@ -9,10 +9,10 @@ import (
 )
 
 type DeleteHandler struct {
-	SessionService *services.SessionService
+	SessionService services.ISessionService
 }
 
-func NewDeleteHandler(sessionService *services.SessionService) *DeleteHandler {
+func NewDeleteHandler(sessionService services.ISessionService) *DeleteHandler {
 	return &DeleteHandler{
 		SessionService: sessionService,
 	}

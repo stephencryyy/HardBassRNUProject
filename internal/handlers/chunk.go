@@ -15,11 +15,11 @@ import (
 )
 
 type UploadChunkHandler struct {
-	SessionService *services.SessionService
+	SessionService services.ISessionService
 	MaxChunkSize   int
 }
 
-func NewUploadChunkHandler(sessionService *services.SessionService) *UploadChunkHandler {
+func NewUploadChunkHandler(sessionService services.ISessionService) *UploadChunkHandler {
 	return &UploadChunkHandler{
 		SessionService: sessionService,
 	}
@@ -97,18 +97,18 @@ func (h *UploadChunkHandler) UploadChunk(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Checksum validation
-	isValidChecksum := h.SessionService.FileService.ValidateChecksum(fileData, checksum)
+	isValidChecksum := h.SessionService.GetFileService().ValidateChecksum(fileData, checksum)
 	log.Printf("Checksum valid: %v", isValidChecksum)
 	if !isValidChecksum {
 		sendErrorResponse(w, http.StatusPreconditionFailed, 412, "Checksum validation failed.", map[string]interface{}{
 			"expected_checksum": checksum,
-			"provided_checksum": h.SessionService.FileService.CalculateChecksum(fileData),
+			"provided_checksum": h.SessionService.GetFileService().CalculateChecksum(fileData),
 		}, "Please resend the chunk with the correct data.")
 		return
 	} 
 
 	// Save the chunk
-	err = h.SessionService.FileService.SaveChunk(sessionID, chunkID, fileData)
+	err = h.SessionService.GetFileService().SaveChunk(sessionID, chunkID, fileData)
 	if err != nil {
 		if err == services.ErrChunkAlreadyExists {
 			sendErrorResponse(w, http.StatusConflict, 409, "Chunk already uploaded.", map[string]interface{}{
