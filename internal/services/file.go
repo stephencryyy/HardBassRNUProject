@@ -21,6 +21,16 @@ type FileService struct {
 	ChecksumService *utils.ChecksumService
 	LocalPath       string
 }
+type IFileService interface {
+    FileExists(fileName string) bool
+    CalculateChunkSize(fileSize, MaxChunkSize int64) int64
+    SaveChunk(sessionID string, chunkID int, chunkData []byte) error
+    GetNextChunkID(sessionID string) (int, error)
+    ValidateChecksum(data []byte, expectedChecksum string) bool
+    CalculateChecksum(data []byte) string
+	AssembleChunks(sessionID string, outputFilePath string) error
+	DeleteChunks(sessionID string) error
+}
 
 func NewFileService(storage *storage.RedisClient, localPath string) *FileService {
 	return &FileService{
@@ -186,13 +196,13 @@ func extractChunkID(fileName string) int {
 func appendChunk(outputFile *os.File, chunkFilePath string) error {
 	chunkFile, err := os.Open(chunkFilePath)
 	if err != nil {
-		return fmt.Errorf("failed to open chunk file %s: %w", chunkFile, err)
+		return fmt.Errorf("failed to open chunk file %s: %w", chunkFilePath, err)
 	}
 	defer chunkFile.Close()
 
 	_, err = io.Copy(outputFile, chunkFile)
 	if err != nil {
-		return fmt.Errorf("failed to write chunk data %s: %w", chunkFile, err)
+		return fmt.Errorf("failed to write chunk data from file %s: %w", chunkFilePath, err)
 	}
 
 	return nil

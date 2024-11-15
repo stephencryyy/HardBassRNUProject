@@ -37,7 +37,7 @@ func (h *UploadChunkHandler) CompleteUpload(w http.ResponseWriter, r *http.Reque
 	}
 
 	// Все чанки загружены, теперь собираем файл
-	err = h.SessionService.FileService.AssembleChunks(sessionID, "target_file_name") // Укажите имя целевого файла
+	err = h.SessionService.GetFileService().AssembleChunks(sessionID, "target_file_name") // Укажите имя целевого файла
 	if err != nil {
 		sendErrorResponse(w, http.StatusInternalServerError, 500, "Failed to assemble chunks.", err.Error(), "")
 		return

@@ -8,10 +8,10 @@ import (
 )
 
 type StartHandler struct {
-	SessionService *services.SessionService
+	SessionService services.ISessionService
 }
 
-func NewStartHandler(sessionService *services.SessionService) *StartHandler {
+func NewStartHandler(sessionService services.ISessionService) *StartHandler {
 	return &StartHandler{
 		SessionService: sessionService,
 	}
