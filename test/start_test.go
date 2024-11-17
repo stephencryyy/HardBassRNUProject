@@ -1,5 +1,7 @@
 package test
+
 import (
+	"BASProject/internal/handlers"
 	"BASProject/internal/services"
 	"bytes"
 	"encoding/json"
@@ -7,7 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"BASProject/internal/handlers"
+
 	"github.com/stretchr/testify/assert"
 )
 
@@ -49,8 +51,8 @@ func TestStartSession_MissingParameters(t *testing.T) {
 // Test для успешного создания сессии
 func TestStartSession_Success(t *testing.T) {
 	mockService := &services.SessionServiceMock{
-		CreateSessionFunc: func(fileName string, fileSize int64) (string, int64, error) {
-			return "test-session-id", 1024, nil
+		CreateSessionFunc: func(fileName string, fileSize int64, fileHash string) (int64, error) {
+			return 1024, nil
 		},
 	}
 	handler := handlers.NewStartHandler(mockService)
@@ -76,8 +78,8 @@ func TestStartSession_Success(t *testing.T) {
 // Test для проверки ошибки от SessionService
 func TestStartSession_ServiceError(t *testing.T) {
 	mockService := &services.SessionServiceMock{
-		CreateSessionFunc: func(fileName string, fileSize int64) (string, int64, error) {
-			return "", 0, errors.New("service error")
+		CreateSessionFunc: func(fileName string, fileSize int64, fileHash string) (int64, error) {
+			return 0, errors.New("service error")
 		},
 	}
 	handler := handlers.NewStartHandler(mockService)

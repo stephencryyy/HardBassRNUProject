@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 
 	"BASProject/internal/services"
@@ -21,26 +22,32 @@ func (h *StartHandler) StartSession(w http.ResponseWriter, r *http.Request) {
 	var requestData struct {
 		FileName string `json:"file_name"`
 		FileSize int64  `json:"file_size"`
+		FileHash string `json:"file_hash"`
 	}
 
+	// Декодируем данные из тела запроса
 	err := json.NewDecoder(r.Body).Decode(&requestData)
 	if err != nil {
 		http.Error(w, "Invalid JSON format", http.StatusBadRequest)
+		log.Printf("Ошибка при декодировании JSON: %v", err)
 		return
 	}
 
-	if requestData.FileName == "" || requestData.FileSize <= 0 {
+	// Проверяем корректность полученных данных
+	if requestData.FileName == "" || requestData.FileSize <= 0 || requestData.FileHash == "" {
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"status":     "error",
 			"error_code": 400,
 			"message":    "Invalid request. Missing or incorrect parameters.",
-			"details":    "Parameter 'file_size' is required and must be a positive integer.",
+			"details":    "File name, size, and hash are required.",
 		})
+		log.Println("Ошибка: недостающие или некорректные параметры")
 		return
 	}
 
-	sessionID, chunkSize, err := h.SessionService.CreateSession(requestData.FileName, requestData.FileSize)
+	// Создаем сессию, используя полученные данные
+	chunkSize, err := h.SessionService.CreateSession(requestData.FileName, requestData.FileSize, requestData.FileHash)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]interface{}{
@@ -49,15 +56,18 @@ func (h *StartHandler) StartSession(w http.ResponseWriter, r *http.Request) {
 			"message":    "Internal server error.",
 			"details":    err.Error(),
 		})
+		log.Printf("Ошибка при создании сессии: %v", err)
 		return
 	}
 
+	// Ответ с размером чанка
 	responseData := map[string]interface{}{
-		"session_id": sessionID,
 		"chunk_size": chunkSize,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(responseData)
+	if err := json.NewEncoder(w).Encode(responseData); err != nil {
+		log.Printf("Ошибка при отправке ответа: %v", err)
+	}
 }

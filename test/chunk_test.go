@@ -1,8 +1,8 @@
 package test
 
 import (
-	"BASProject/internal/services"
 	"BASProject/internal/handlers"
+	"BASProject/internal/services"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -10,10 +10,10 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
 	"github.com/gorilla/mux"
 	"github.com/stretchr/testify/assert"
 )
-
 
 func TestUploadChunkHandler_MissingSessionID(t *testing.T) {
 	handler := handlers.NewUploadChunkHandler(&services.SessionServiceMock{})
@@ -139,7 +139,7 @@ func TestUploadChunkHandler_Success(t *testing.T) {
 	mockService := &services.SessionServiceMock{
 		FileService: &services.FileServiceMock{
 			ValidateChecksumFunc: func(data []byte, checksum string) bool { return true },
-			SaveChunkFunc: func(sessionID string, chunkID int, data []byte) error { return nil },
+			SaveChunkFunc:        func(sessionID string, chunkID int, data []byte) error { return nil },
 		},
 	}
 	handler := handlers.NewUploadChunkHandler(mockService)

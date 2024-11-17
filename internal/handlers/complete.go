@@ -50,6 +50,13 @@ func (h *UploadChunkHandler) CompleteUpload(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	// временные файлы
+	err = h.SessionService.GetFileService().DeleteChunks(sessionID)
+	if err != nil {
+		sendErrorResponse(w, http.StatusInternalServerError, 500, "Failed to delete session.", err.Error(), "")
+		return
+	}
+
 	// Ответ об успешном завершении
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)

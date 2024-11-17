@@ -22,14 +22,15 @@ type FileService struct {
 	LocalPath       string
 }
 type IFileService interface {
-    FileExists(fileName string) bool
-    CalculateChunkSize(fileSize, MaxChunkSize int64) int64
-    SaveChunk(sessionID string, chunkID int, chunkData []byte) error
-    GetNextChunkID(sessionID string) (int, error)
-    ValidateChecksum(data []byte, expectedChecksum string) bool
-    CalculateChecksum(data []byte) string
+	FileExists(fileName string) bool
+	CalculateChunkSize(fileSize, MaxChunkSize int64) int64
+	SaveChunk(sessionID string, chunkID int, chunkData []byte) error
+	GetNextChunkID(sessionID string) (int, error)
+	ValidateChecksum(chunkData []byte, expectedChecksum string) bool
+	CalculateChecksum(chunkData []byte) string
 	AssembleChunks(sessionID string, outputFilePath string) error
 	DeleteChunks(sessionID string) error
+	ChunkExists(sessionID string, chunkID int) (bool, error)
 }
 
 func NewFileService(storage *storage.RedisClient, localPath string) *FileService {
@@ -48,6 +49,7 @@ func (f *FileService) FileExists(fileName string) bool {
 
 // Вычисление подходящего размера чанка в зависимости от размера файла
 func (f *FileService) CalculateChunkSize(fileSize, MaxChunkSize int64) int64 {
+	log.Printf("fileSize: %d, MaxChunkSize: %d", fileSize, MaxChunkSize)
 	chunkSize := int64(0)
 	if fileSize < 50*1024*1024 { // Меньше 50MB
 		chunkSize = 4 * 1024 * 1024 // 4MB
@@ -64,46 +66,41 @@ func (f *FileService) CalculateChunkSize(fileSize, MaxChunkSize int64) int64 {
 
 // Сохранение чанка
 func (f *FileService) SaveChunk(sessionID string, chunkID int, chunkData []byte) error {
-	// Проверка, загружен ли чанк
-	chunkExists, err := f.Storage.ChunkExists(sessionID, chunkID)
+	// Проверяем, существует ли чанк в Redis
+	ChunkExists, err := f.Storage.ChunkExists(sessionID, chunkID)
 	if err != nil {
-		return fmt.Errorf("failed to check if chunk exists: %w", err)
+		return fmt.Errorf("failed to check chunk existence: %w", err)
 	}
-	if chunkExists {
+	if ChunkExists {
+		log.Printf("Chunk %d for session %s already exists. Skipping upload.", chunkID, sessionID)
 		return ErrChunkAlreadyExists
 	}
 
-	// Сохранение чанка в Redis
-	err = f.Storage.SaveChunkData(sessionID, chunkID, chunkData)
-	if err != nil {
-		return fmt.Errorf("failed to save chunk data: %w", err)
-	}
-
-	//tODO: Сохранение чанка на диск
 	log.Printf("Saving chunk %d for session %s", chunkID, sessionID)
-
-	// Логика сохранения чанка на диск
+	// Сохраняем чанк на диск
 	filePath := filepath.Join("./data", fmt.Sprintf("%s_%d.part", sessionID, chunkID))
 
-	// Создаем файл и записываем данные
 	file, err := os.Create(filePath)
 	if err != nil {
 		return fmt.Errorf("failed to create chunk file: %w", err)
 	}
 	defer file.Close()
-
 	_, err = file.Write(chunkData)
 	if err != nil {
-		return fmt.Errorf("failed to write chunk data to file: %w", err)
+		return fmt.Errorf("failed to write chunk chunkData: %w", err)
 	}
-	log.Printf("Chunk %d for session %s saved successfully at %s", chunkID, sessionID, filePath)
 
-	// Обновление общего прогресса загрузки
+	// Отмечаем чанк как загруженный в Redis
+	err = f.Storage.AddUploadedChunk(sessionID, chunkID)
+	if err != nil {
+		return fmt.Errorf("failed to mark chunk %d as uploaded: %w", chunkID, err)
+	}
 	err = f.Storage.UpdateUploadedSize(sessionID, int64(len(chunkData)))
 	if err != nil {
-		return fmt.Errorf("failed to update uploaded size: %w", err)
+		return fmt.Errorf("failed to mark chunk %d as uploaded: %w", chunkID, err)
 	}
 
+	log.Printf("Chunk %d for session %s saved successfully.", chunkID, sessionID)
 	return nil
 }
 
@@ -130,14 +127,14 @@ func (f *FileService) GetNextChunkID(sessionID string) (int, error) {
 var ErrChunkAlreadyExists = errors.New("chunk already exists")
 
 // ValidateChecksum проверяет контрольную сумму данных.
-func (f *FileService) ValidateChecksum(data []byte, expectedChecksum string) bool {
-	calculatedChecksum := f.CalculateChecksum(data)
+func (f *FileService) ValidateChecksum(chunkData []byte, expectedChecksum string) bool {
+	calculatedChecksum := f.CalculateChecksum(chunkData)
 	return calculatedChecksum == expectedChecksum
 }
 
 // CalculateChecksum вычисляет контрольную сумму данных в формате SHA-256.
-func (f *FileService) CalculateChecksum(data []byte) string {
-	hash := sha256.Sum256(data)
+func (f *FileService) CalculateChecksum(chunkData []byte) string {
+	hash := sha256.Sum256(chunkData)
 	return hex.EncodeToString(hash[:])
 }
 
@@ -146,13 +143,14 @@ func (fs *FileService) AssembleChunks(sessionID string, outputFilePath string) e
 	outputFile, err := os.Create(outputFilePath)
 	if err != nil {
 		return fmt.Errorf("failed to create output file: %w", err)
+
 	}
 	defer outputFile.Close()
 
 	// Получаем все файлы чанков для сессии
 	chunkFiles, err := filepath.Glob(fmt.Sprintf("./data/%s_*.part", sessionID))
 	if err != nil {
-		return fmt.Errorf("failed to find chunk files: %w", err)
+		log.Fatalf("Failed to list chunk files: %v", err)
 	}
 
 	if len(chunkFiles) == 0 {
@@ -202,7 +200,7 @@ func appendChunk(outputFile *os.File, chunkFilePath string) error {
 
 	_, err = io.Copy(outputFile, chunkFile)
 	if err != nil {
-		return fmt.Errorf("failed to write chunk data from file %s: %w", chunkFilePath, err)
+		return fmt.Errorf("failed to write chunk chunkData from file %s: %w", chunkFilePath, err)
 	}
 
 	return nil
@@ -225,14 +223,30 @@ func (s *FileService) DeleteChunks(sessionID string) error {
 	}
 
 	// Удаляем собранный файл (если он существует)
-	assembledFileName := fmt.Sprintf("%s", sessionID) // Зависит от вашей реализации
-	assembledFilePath := filepath.Join(s.LocalPath, assembledFileName)
-	if _, err := os.Stat(assembledFilePath); err == nil {
-		err := os.Remove(assembledFilePath)
-		if err != nil {
-			return fmt.Errorf("failed to delete assembled file %s: %w", assembledFilePath, err)
-		}
-	}
+	// assembledFileName := fmt.Sprintf("%s", sessionID) // Зависит от вашей реализации
+	// assembledFilePath := filepath.Join(s.LocalPath, assembledFileName)
+	// if _, err := os.Stat(assembledFilePath); err == nil {
+	// 	err := os.Remove(assembledFilePath)
+	// 	if err != nil {
+	// 		return fmt.Errorf("failed to delete assembled file %s: %w", assembledFilePath, err)
+	// 	}
+	// }
 
 	return nil
+}
+
+func (f *FileService) GenerateUniqueName(fileName string) string {
+	baseName := strings.TrimSuffix(fileName, filepath.Ext(fileName))
+	extension := filepath.Ext(fileName)
+
+	for i := 1; ; i++ {
+		newName := fmt.Sprintf("%s(%d)%s", baseName, i, extension)
+		if !f.FileExists(newName) {
+			return newName
+		}
+	}
+}
+
+func (f *FileService) ChunkExists(sessionID string, chunkID int) (bool, error) {
+	return f.Storage.ChunkExists(sessionID, chunkID)
 }
