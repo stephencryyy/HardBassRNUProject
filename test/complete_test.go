@@ -1,24 +1,25 @@
 package test
 
 import (
-	"BASProject/internal/services"
 	"BASProject/internal/handlers"
+	"BASProject/internal/services"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
 	"github.com/gorilla/mux"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestCompleteUpload_MissingSessionID(t *testing.T) {
 	mockService := &services.SessionServiceMock{
-		CreateSessionFunc: func(fileName string, fileSize int64) (string, int64, error) {
-			return "test-session-id", 1024, nil
+		CreateSessionFunc: func(fileName string, fileSize int64, fileHash string) (int64, error) {
+			return 1024, nil
 		},
 	}
-	
+
 	handler := handlers.NewUploadChunkHandler(mockService)
 	req, err := http.NewRequest("POST", "/complete", nil)
 	if err != nil {

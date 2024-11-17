@@ -26,7 +26,7 @@ func NewUploadChunkHandler(sessionService services.ISessionService) *UploadChunk
 }
 
 func (h *UploadChunkHandler) UploadChunk(w http.ResponseWriter, r *http.Request) {
-	// Extract session_id from URL
+	// Извлечение session_id из URL
 	vars := mux.Vars(r)
 	sessionID := vars["session_id"]
 	log.Printf("Received session_id: %s", sessionID)
@@ -57,20 +57,20 @@ func (h *UploadChunkHandler) UploadChunk(w http.ResponseWriter, r *http.Request)
 	}
 	defer chunkFile.Close()
 
-	// Use Content-Length to determine actual size of the current chunk
+	// Используем Content-Length для определения размера текущего чанка
 	chunkSize := r.ContentLength
 
-	// Calculate timeout based on chunk size
+	// Вычисляем таймаут в зависимости от размера чанка
 	timeout := time.Duration(10*chunkSize/1024/1024) * time.Second
-	if timeout < 60*time.Second { // Minimum timeout — 60 seconds
+	if timeout < 60*time.Second { // Минимальный таймаут — 60 секунд
 		timeout = 60 * time.Second
 	}
 
-	// Context with dynamic timeout
+	// Контекст с динамическим таймаутом
 	ctx, cancel := context.WithTimeout(r.Context(), timeout)
 	defer cancel()
 
-	// Use channels for asynchronous data reading with timeout handling
+	// Используем каналы для асинхронного чтения данных с таймаутом
 	fileDataChan := make(chan []byte)
 	errChan := make(chan error)
 
@@ -91,12 +91,12 @@ func (h *UploadChunkHandler) UploadChunk(w http.ResponseWriter, r *http.Request)
 		sendErrorResponse(w, http.StatusInternalServerError, 500, "Failed to read chunk data.", err.Error(), "")
 		return
 	case <-ctx.Done():
-		// Timeout expired — return dynamic error message
+		// Время ожидания истекло — возвращаем сообщение об ошибке
 		sendErrorResponse(w, http.StatusGatewayTimeout, 504, fmt.Sprintf("Timeout processing chunk. Chunk size: %d bytes, timeout: %.0f seconds.", chunkSize, timeout.Seconds()), nil, "Please try uploading the chunk again.")
 		return
 	}
 
-	// Checksum validation
+	// Проверка контрольной суммы
 	isValidChecksum := h.SessionService.GetFileService().ValidateChecksum(fileData, checksum)
 	log.Printf("Checksum valid: %v", isValidChecksum)
 	if !isValidChecksum {
@@ -105,25 +105,32 @@ func (h *UploadChunkHandler) UploadChunk(w http.ResponseWriter, r *http.Request)
 			"provided_checksum": h.SessionService.GetFileService().CalculateChecksum(fileData),
 		}, "Please resend the chunk with the correct data.")
 		return
-	} 
+	}
 
-	// Save the chunk
+	// Проверка, существует ли уже чанк на сервере
+	exists, err := h.SessionService.GetFileService().ChunkExists(sessionID, chunkID)
+	if err != nil {
+		sendErrorResponse(w, http.StatusInternalServerError, 500, "Error checking chunk existence.", err.Error(), "")
+		return
+	}
+	if exists {
+		sendErrorResponse(w, http.StatusConflict, 409, "Chunk already uploaded.", map[string]interface{}{
+			"chunk_id":   chunkID,
+			"session_id": sessionID,
+		}, "Check uploaded chunks via /upload/status before sending.")
+		return
+	}
+
+	// Сохраняем чанк
 	err = h.SessionService.GetFileService().SaveChunk(sessionID, chunkID, fileData)
 	if err != nil {
-		if err == services.ErrChunkAlreadyExists {
-			sendErrorResponse(w, http.StatusConflict, 409, "Chunk already uploaded.", map[string]interface{}{
-				"chunk_id":   chunkID,
-				"session_id": sessionID,
-			}, "Check uploaded chunks via /upload/status before sending.")
-			return
-		}
 		sendErrorResponse(w, http.StatusInternalServerError, 500, "Internal server error.", err.Error(), "Please try again later.")
 		return
 	}
 
 	nextChunkID := chunkID + 1
 
-	// Success response
+	// Ответ о успешной загрузке чанка
 	log.Printf("Chunk %d uploaded successfully. Next chunk_id: %d", chunkID, nextChunkID)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -145,4 +152,3 @@ func sendErrorResponse(w http.ResponseWriter, statusCode int, errorCode int, mes
 		"suggestion": suggestion,
 	})
 }
-

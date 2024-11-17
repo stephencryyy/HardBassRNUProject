@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"strconv"
+	"time"
 
 	"github.com/go-redis/redis/v8"
 )
@@ -54,17 +55,6 @@ func (r *RedisClient) SessionExists(sessionID string) (int64, error) {
 	return r.Client.Exists(ctx, sessionID).Result()
 }
 
-// Сохранение данных чанка
-func (r *RedisClient) SaveChunkData(sessionID string, chunkID int, chunkData []byte) error {
-	chunkKey := fmt.Sprintf("%s:chunk:%d", sessionID, chunkID)
-	// Добавляем chunkID в множество загруженных чанков
-	err := r.AddUploadedChunk(sessionID, chunkID)
-	if err != nil {
-		return err
-	}
-	return r.Client.Set(ctx, chunkKey, chunkData, 0).Err()
-}
-
 // Добавление chunkID в множество загруженных чанков
 func (r *RedisClient) AddUploadedChunk(sessionID string, chunkID int) error {
 	setKey := fmt.Sprintf("%s:chunks", sessionID)
@@ -73,9 +63,9 @@ func (r *RedisClient) AddUploadedChunk(sessionID string, chunkID int) error {
 
 // Проверка, загружен ли чанк
 func (r *RedisClient) ChunkExists(sessionID string, chunkID int) (bool, error) {
-	chunkKey := fmt.Sprintf("%s:chunk:%d", sessionID, chunkID)
-	exists, err := r.Client.Exists(ctx, chunkKey).Result()
-	return exists > 0, err
+	chunkKey := fmt.Sprintf("%s:chunks", sessionID)
+	exists, err := r.Client.SIsMember(ctx, chunkKey, chunkID).Result()
+	return exists, err
 }
 
 // Обновление загруженного объема данных в сессии
@@ -86,15 +76,28 @@ func (r *RedisClient) UpdateUploadedSize(sessionID string, size int64) error {
 
 // Получение данных сессии
 func (r *RedisClient) GetSessionData(sessionID string) (map[string]interface{}, error) {
+	// Проверяем, существует ли ключ с данным sessionID
+	exists, err := r.Client.Exists(ctx, sessionID).Result()
+	if err != nil {
+		return nil, fmt.Errorf("error checking existence of session: %v", err)
+	}
+	if exists == 0 {
+		// Если ключ не существует, возвращаем ошибку
+		return nil, fmt.Errorf("session not found")
+	}
+
+	// Извлекаем данные сессии из Redis
 	data, err := r.Client.HGetAll(ctx, sessionID).Result()
 	if err != nil {
 		return nil, err
 	}
 
+	// Создаем карту для хранения данных сессии
 	sessionData := make(map[string]interface{})
 	for key, value := range data {
 		switch key {
 		case "file_size", "uploaded_size", "chunk_size":
+			// Преобразуем значения в int64
 			intVal, err := strconv.ParseInt(value, 10, 64)
 			if err != nil {
 				return nil, fmt.Errorf("invalid value for %s: %v", key, err)
@@ -126,46 +129,42 @@ func (r *RedisClient) GetChunks(sessionID string) ([]int, error) {
 	return chunkIDs, nil
 }
 
-// Получение sessionID по имени файла
-func (r *RedisClient) GetSessionIDByFileName(fileName string) (string, error) {
-	sessionIDKey := fmt.Sprintf("session:%s", fileName)
-	sessionID, err := r.Client.Get(ctx, sessionIDKey).Result()
-	if err == redis.Nil {
-		return "", nil // Сессия для этого файла не найдена
-	}
-	if err != nil {
-		return "", err // Ошибка при поиске сессии
-	}
-	return sessionID, nil
-}
-
 // Удаление сессии
 func (r *RedisClient) DeleteSessionData(sessionID string) error {
 	// Удаляем хэш сессии
 	err := r.Client.Del(ctx, sessionID).Err()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to delete session hash: %w", err)
 	}
 
-	// Удаляем множество загруженных чанков
+	// Удаляем множество загруженных чанков (set)
 	chunksSetKey := fmt.Sprintf("%s:chunks", sessionID)
 	err = r.Client.Del(ctx, chunksSetKey).Err()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to delete chunks set: %w", err)
 	}
 
-	// Удаляем ключи чанков (если вы сохраняете чанки в Redis)
-	chunkKeysPattern := fmt.Sprintf("%s:chunk:*", sessionID)
-	keys, err := r.Client.Keys(ctx, chunkKeysPattern).Result()
+	// Дополнительно проверим, что ключ удален
+	exists, err := r.Client.Exists(ctx, chunksSetKey).Result()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to check if chunks set exists: %w", err)
 	}
-	if len(keys) > 0 {
-		err = r.Client.Del(ctx, keys...).Err()
-		if err != nil {
-			return err
-		}
+
+	if exists == 1 {
+		log.Printf("Chunks set %s still exists", chunksSetKey)
+	} else {
+		log.Printf("Chunks set %s successfully deleted", chunksSetKey)
 	}
 
 	return nil
+}
+
+func (r *RedisClient) AcquireLock(key string, ttl int) (bool, error) {
+	result, err := r.Client.SetNX(ctx, key, "locked", time.Duration(ttl)*time.Second).Result()
+	return result, err
+}
+
+func (r *RedisClient) ReleaseLock(key string) error {
+	_, err := r.Client.Del(ctx, key).Result()
+	return err
 }

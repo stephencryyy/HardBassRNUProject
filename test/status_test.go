@@ -1,15 +1,16 @@
 package test
 
 import (
+	"BASProject/internal/handlers"
 	"BASProject/internal/services"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"encoding/json"
+
 	"github.com/gorilla/mux"
 	"github.com/stretchr/testify/assert"
-	"BASProject/internal/handlers"
 )
 
 // Test для проверки отсутствия session_id
