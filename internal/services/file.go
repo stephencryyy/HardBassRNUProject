@@ -11,8 +11,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"sort"
-	"strconv"
 	"strings"
 )
 
@@ -139,55 +137,55 @@ func (f *FileService) CalculateChecksum(chunkData []byte) string {
 }
 
 func (fs *FileService) AssembleChunks(sessionID string, outputFilePath string) error {
-	// Открываем файл для записи результата
-	outputFile, err := os.Create(outputFilePath)
+    // Получаем данные сессии
+    sessionData, err := fs.Storage.GetSessionData(sessionID)
+    if err != nil {
+        return fmt.Errorf("failed to get session data: %w", err)
+    }
+
+    // Extract and convert fileSize
+	fileSize, err := extractInt64(sessionData["file_size"])
 	if err != nil {
-		return fmt.Errorf("failed to create output file: %w", err)
-
+		return fmt.Errorf("invalid file size in session data: %v", err)
 	}
-	defer outputFile.Close()
 
-	// Получаем все файлы чанков для сессии
-	chunkFiles, err := filepath.Glob(fmt.Sprintf("./data/%s_*.part", sessionID))
+	chunkSize, err := extractInt64(sessionData["chunk_size"])
 	if err != nil {
-		log.Fatalf("Failed to list chunk files: %v", err)
+		return fmt.Errorf("invalid chunk size in session data: %v", err)
 	}
 
-	if len(chunkFiles) == 0 {
-		return fmt.Errorf("no chunks found for session %s", sessionID)
-	}
+    totalChunks := int((fileSize + chunkSize - 1) / chunkSize)
 
-	// Сортируем файлы по chunkID
-	sort.Slice(chunkFiles, func(i, j int) bool {
-		// Извлекаем chunkID из имени файла
-		id1 := extractChunkID(chunkFiles[i])
-		id2 := extractChunkID(chunkFiles[j])
-		return id1 < id2
-	})
+    // Проверяем наличие всех чанков
+    missingChunks := []int{}
+    for i := 1; i <= totalChunks; i++ {
+        chunkFile := fmt.Sprintf("./data/%s_%d.part", sessionID, i)
+        if _, err := os.Stat(chunkFile); os.IsNotExist(err) {
+            missingChunks = append(missingChunks, i)
+        }
+    }
 
-	// Собираем все чанки в один файл
-	for _, chunkFile := range chunkFiles {
-		err := appendChunk(outputFile, chunkFile)
-		if err != nil {
-			return fmt.Errorf("failed to append chunk %s: %w", chunkFile, err)
-		}
-	}
+    if len(missingChunks) > 0 {
+        return fmt.Errorf("missing chunks: %v", missingChunks)
+    }
 
-	return nil
-}
+    // Собираем файл
+    outputFile, err := os.Create(outputFilePath)
+    if err != nil {
+        return fmt.Errorf("failed to create output file: %w", err)
+    }
+    defer outputFile.Close()
 
-// Вспомогательная функция для извлечения chunkID из имени файла
-func extractChunkID(fileName string) int {
-	parts := strings.Split(fileName, "_")
-	if len(parts) < 2 {
-		return 0 // Возвращаем 0, если формат имени файла некорректный
-	}
-	chunkIDStr := strings.TrimSuffix(parts[len(parts)-1], ".part")
-	chunkID, err := strconv.Atoi(chunkIDStr)
-	if err != nil {
-		return 0 // Возвращаем 0, если преобразование не удалось
-	}
-	return chunkID
+    // Собираем все чанки в один файл
+    for i := 1; i <= totalChunks; i++ {
+        chunkFile := fmt.Sprintf("./data/%s_%d.part", sessionID, i)
+        err := appendChunk(outputFile, chunkFile)
+        if err != nil {
+            return fmt.Errorf("failed to append chunk %s: %w", chunkFile, err)
+        }
+    }
+
+    return nil
 }
 
 // Вспомогательная функция для записи чанка в выходной файл
