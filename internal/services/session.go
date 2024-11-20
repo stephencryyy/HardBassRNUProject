@@ -293,6 +293,7 @@ func (fs *FileService) CountChunks(fileHash string) (int, error) {
   }
   return len(files), nil
 }
+
 func extractInt64(value interface{}) (int64, error) {
   switch v := value.(type) {
   case int64:

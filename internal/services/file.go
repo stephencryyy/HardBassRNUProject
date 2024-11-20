@@ -219,20 +219,8 @@ func (s *FileService) DeleteChunks(sessionID string) error {
 			return fmt.Errorf("failed to delete chunk file %s: %w", file, err)
 		}
 	}
-
-	// Удаляем собранный файл (если он существует)
-	// assembledFileName := fmt.Sprintf("%s", sessionID) // Зависит от вашей реализации
-	// assembledFilePath := filepath.Join(s.LocalPath, assembledFileName)
-	// if _, err := os.Stat(assembledFilePath); err == nil {
-	// 	err := os.Remove(assembledFilePath)
-	// 	if err != nil {
-	// 		return fmt.Errorf("failed to delete assembled file %s: %w", assembledFilePath, err)
-	// 	}
-	// }
-
 	return nil
 }
-
 func (f *FileService) GenerateUniqueName(fileName string) string {
 	baseName := strings.TrimSuffix(fileName, filepath.Ext(fileName))
 	extension := filepath.Ext(fileName)

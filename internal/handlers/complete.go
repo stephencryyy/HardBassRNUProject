@@ -86,14 +86,21 @@ func (h *UploadChunkHandler) CompleteUpload(w http.ResponseWriter, r *http.Reque
         return
     }
 
-    // Assemble the chunks
+    // Assemble the file
     err = h.SessionService.GetFileService().AssembleChunks(sessionID, outputFilePath)
     if err != nil {
         h.cleanupSession(sessionID)	
         sendErrorResponse(w, http.StatusInternalServerError, 500, "Failed to assemble chunks. Session data has been cleaned up.", err.Error(), "")
         return
     }
-
+ 
+    // Удаляем файлы чанков
+    err = h.SessionService.GetFileService().DeleteChunks(sessionID)
+    if err != nil {
+        log.Printf("Failed to delete chunks for session %s: %v", sessionID, err)
+        return
+    }
+    
     // Return success response
     w.Header().Set("Content-Type", "application/json")
     w.WriteHeader(http.StatusOK)
