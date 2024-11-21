@@ -21,19 +21,40 @@ import (
 )
 
 func main() {
-	// Параметры командной строки
+	// Пример данных для отправки
 	fileFlag := flag.String("file", "example.txt", "Path to the file")
 	flag.Parse()
 
 	filePath := *fileFlag
 
-	// В клиенте
-	cfg, err := config.LoadConfig("config/config.yaml")
+	// Определяем флаги командной строки
+	portFlag := flag.Int("port", 0, "Port for the server (overrides config)")
+	storageFlag := flag.String("storage", "", "Path to storage (overrides config)")
+	flag.Parse()
+
+	// Загрузка конфигурации из файла
+	cfgPath := "config/config.yaml"
+	cfg, err := config.LoadConfig(cfgPath)
 	if err != nil {
 		log.Fatalf("Error loading config: %v", err)
 	}
+
+	// Если значение порта передано через командную строку, то используем его, иначе берем из конфига
 	port := cfg.Server.Port
+	if *portFlag != 0 {
+		port = *portFlag
+	}
+
+	// Если путь к хранилищу передан через командную строку, то используем его, иначе берем из конфига
+	storagePath := cfg.Storage.Path
+	if *storageFlag != "" {
+		storagePath = *storageFlag
+	}
+
+	// Используем обновленные значения порта и пути к хранилищу
 	serverURL := fmt.Sprintf("http://localhost:%d", port)
+	fmt.Printf("Server will start at %s\n", serverURL)
+	fmt.Printf("Storage path is set to %s\n", storagePath)
 
 	// Создание сессии
 	fileHash, err := CalculateFileHash(filePath)

@@ -5,4 +5,4 @@ redis:
   password: ""
   db: 0
 storage:
-  path: ./data
+  path: data
