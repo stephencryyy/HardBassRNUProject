@@ -33,6 +33,9 @@ type IFileService interface {
 }
 
 func NewFileService(storage *storage.RedisClient, localPath string) *FileService {
+	if localPath == "" {
+		localPath = "data"
+	}
 	return &FileService{
 		Storage:         storage,
 		ChecksumService: utils.NewChecksumService(),
@@ -42,7 +45,8 @@ func NewFileService(storage *storage.RedisClient, localPath string) *FileService
 
 // Проверка существования файла на сервере
 func (f *FileService) FileExists(fileName string) bool {
-	_, err := os.Stat(fileName)
+	filePath := filepath.Join(f.LocalPath, fileName)
+	_, err := os.Stat(filePath)
 	return !errors.Is(err, os.ErrNotExist)
 }
 
@@ -77,7 +81,7 @@ func (f *FileService) SaveChunk(sessionID string, chunkID int, chunkData []byte)
 
 	log.Printf("Saving chunk %d for session %s", chunkID, sessionID)
 	// Сохраняем чанк на диск
-	filePath := filepath.Join("./data", fmt.Sprintf("%s_%d.part", sessionID, chunkID))
+	filePath := filepath.Join(f.LocalPath, fmt.Sprintf("%s_%d.part", sessionID, chunkID))
 
 	file, err := os.Create(filePath)
 	if err != nil {
@@ -137,14 +141,13 @@ func (f *FileService) CalculateChecksum(chunkData []byte) string {
 	return hex.EncodeToString(hash[:])
 }
 
+// Сборка чанков в итоговый файл
 func (fs *FileService) AssembleChunks(sessionID string, outputFilePath string) error {
-	// Получаем данные сессии
 	sessionData, err := fs.Storage.GetSessionData(sessionID)
 	if err != nil {
 		return fmt.Errorf("failed to get session data: %w", err)
 	}
 
-	// Extract and convert fileSize
 	fileSize, err := extractInt64(sessionData["file_size"])
 	if err != nil {
 		return fmt.Errorf("invalid file size in session data: %v", err)
@@ -157,10 +160,9 @@ func (fs *FileService) AssembleChunks(sessionID string, outputFilePath string) e
 
 	totalChunks := int((fileSize + chunkSize - 1) / chunkSize)
 
-	// Проверяем наличие всех чанков
 	missingChunks := []int{}
 	for i := 1; i <= totalChunks; i++ {
-		chunkFile := fmt.Sprintf("./data/%s_%d.part", sessionID, i)
+		chunkFile := filepath.Join(fs.LocalPath, fmt.Sprintf("%s_%d.part", sessionID, i))
 		if _, err := os.Stat(chunkFile); os.IsNotExist(err) {
 			missingChunks = append(missingChunks, i)
 		}
@@ -170,16 +172,14 @@ func (fs *FileService) AssembleChunks(sessionID string, outputFilePath string) e
 		return fmt.Errorf("missing chunks: %v", missingChunks)
 	}
 
-	// Собираем файл
 	outputFile, err := os.Create(outputFilePath)
 	if err != nil {
 		return fmt.Errorf("failed to create output file: %w", err)
 	}
 	defer outputFile.Close()
 
-	// Собираем все чанки в один файл
 	for i := 1; i <= totalChunks; i++ {
-		chunkFile := fmt.Sprintf("./data/%s_%d.part", sessionID, i)
+		chunkFile := filepath.Join(fs.LocalPath, fmt.Sprintf("%s_%d.part", sessionID, i))
 		err := appendChunk(outputFile, chunkFile)
 		if err != nil {
 			return fmt.Errorf("failed to append chunk %s: %w", chunkFile, err)
@@ -205,10 +205,10 @@ func appendChunk(outputFile *os.File, chunkFilePath string) error {
 	return nil
 }
 
-func (s *FileService) DeleteChunks(sessionID string) error {
-	// Получаем список файлов чанков в директории
-	pattern := fmt.Sprintf("%s_%s", sessionID, "*.part")
-	filesPattern := filepath.Join(s.LocalPath, pattern)
+// Удаление чанков
+func (f *FileService) DeleteChunks(sessionID string) error {
+	pattern := fmt.Sprintf("%s_*.part", sessionID)
+	filesPattern := filepath.Join(f.LocalPath, pattern)
 	files, err := filepath.Glob(filesPattern)
 	if err != nil {
 		return fmt.Errorf("failed to list chunk files: %w", err)
@@ -222,6 +222,7 @@ func (s *FileService) DeleteChunks(sessionID string) error {
 	}
 	return nil
 }
+
 func (f *FileService) GenerateUniqueName(fileName string) string {
 	baseName := strings.TrimSuffix(fileName, filepath.Ext(fileName))
 	extension := filepath.Ext(fileName)
@@ -240,7 +241,7 @@ func (f *FileService) ChunkExists(sessionID string, chunkID int) (bool, error) {
 
 func (f *FileService) GetStoragePath() (string, error) {
 	if f.LocalPath == "" {
-		return "", fmt.Errorf("storage path is not configured")
+		return "data", nil
 	}
 	return f.LocalPath, nil
 }
