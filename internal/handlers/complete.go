@@ -2,16 +2,18 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/gorilla/mux"
 )
 
-// Обработчик завершения загрузки
 func (h *UploadChunkHandler) CompleteUpload(w http.ResponseWriter, r *http.Request) {
+
 	// Get session_id from URL
 	vars := mux.Vars(r)
 	sessionID := vars["session_id"]
@@ -78,11 +80,26 @@ func (h *UploadChunkHandler) CompleteUpload(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Specify the output file path
-	outputFilePath := filepath.Join("./uploads", fileName)
+	// Получаем путь для сборки полного файла из FileService через интерфейсный метод
+	storagePath, err := h.SessionService.GetFileService().GetStoragePath()
+
+	if err != nil {
+		sendErrorResponse(w, http.StatusInternalServerError, 500, "Failpath not find.", nil, "")
+		return
+	}
+
+	// Генерируем уникальное имя файла
+	uniqueFileName, err := GenerateUniqueFileName(storagePath, fileName)
+	if err != nil {
+		sendErrorResponse(w, http.StatusInternalServerError, 500, "Failed to generate unique file name.", nil, "")
+		return
+	}
+
+	// Задаём путь к выходному файлу
+	outputFilePath := filepath.Join(storagePath, uniqueFileName)
 
 	// Ensure the uploads directory exists
-	if err := os.MkdirAll("./uploads", os.ModePerm); err != nil {
+	if err := os.MkdirAll(storagePath, os.ModePerm); err != nil {
 		sendErrorResponse(w, http.StatusInternalServerError, 500, "Failed to create uploads directory.", err.Error(), "")
 		return
 	}
@@ -123,5 +140,33 @@ func (h *UploadChunkHandler) cleanupSession(sessionID string) {
 	err = h.SessionService.DeleteSession(sessionID)
 	if err != nil {
 		log.Printf("Failed to delete session data for session %s: %v", sessionID, err)
+	}
+}
+
+// GenerateUniqueFileName проверяет, существует ли файл, и добавляет суффикс, если нужно.
+func GenerateUniqueFileName(directory, fileName string) (string, error) {
+	// Разделяем имя файла и расширение
+	baseName := strings.TrimSuffix(fileName, filepath.Ext(fileName))
+	extension := filepath.Ext(fileName)
+	uniqueName := fileName
+	counter := 1
+
+	for {
+		// Формируем путь к файлу
+		filePath := filepath.Join(directory, uniqueName)
+
+		// Проверяем, существует ли файл
+		_, err := os.Stat(filePath)
+		if os.IsNotExist(err) {
+			// Файл не существует, можно использовать это имя
+			return uniqueName, nil
+		} else if err != nil {
+			// Произошла какая-то другая ошибка при доступе к файлу
+			return "", err
+		}
+
+		// Если файл существует, добавляем суффикс и проверяем снова
+		uniqueName = fmt.Sprintf("%s(%d)%s", baseName, counter, extension)
+		counter++
 	}
 }

@@ -29,6 +29,7 @@ type IFileService interface {
 	AssembleChunks(sessionID string, outputFilePath string) error
 	DeleteChunks(sessionID string) error
 	ChunkExists(sessionID string, chunkID int) (bool, error)
+	GetStoragePath() (string, error)
 }
 
 func NewFileService(storage *storage.RedisClient, localPath string) *FileService {
@@ -137,13 +138,13 @@ func (f *FileService) CalculateChecksum(chunkData []byte) string {
 }
 
 func (fs *FileService) AssembleChunks(sessionID string, outputFilePath string) error {
-    // Получаем данные сессии
-    sessionData, err := fs.Storage.GetSessionData(sessionID)
-    if err != nil {
-        return fmt.Errorf("failed to get session data: %w", err)
-    }
+	// Получаем данные сессии
+	sessionData, err := fs.Storage.GetSessionData(sessionID)
+	if err != nil {
+		return fmt.Errorf("failed to get session data: %w", err)
+	}
 
-    // Extract and convert fileSize
+	// Extract and convert fileSize
 	fileSize, err := extractInt64(sessionData["file_size"])
 	if err != nil {
 		return fmt.Errorf("invalid file size in session data: %v", err)
@@ -154,38 +155,38 @@ func (fs *FileService) AssembleChunks(sessionID string, outputFilePath string) e
 		return fmt.Errorf("invalid chunk size in session data: %v", err)
 	}
 
-    totalChunks := int((fileSize + chunkSize - 1) / chunkSize)
+	totalChunks := int((fileSize + chunkSize - 1) / chunkSize)
 
-    // Проверяем наличие всех чанков
-    missingChunks := []int{}
-    for i := 1; i <= totalChunks; i++ {
-        chunkFile := fmt.Sprintf("./data/%s_%d.part", sessionID, i)
-        if _, err := os.Stat(chunkFile); os.IsNotExist(err) {
-            missingChunks = append(missingChunks, i)
-        }
-    }
+	// Проверяем наличие всех чанков
+	missingChunks := []int{}
+	for i := 1; i <= totalChunks; i++ {
+		chunkFile := fmt.Sprintf("./data/%s_%d.part", sessionID, i)
+		if _, err := os.Stat(chunkFile); os.IsNotExist(err) {
+			missingChunks = append(missingChunks, i)
+		}
+	}
 
-    if len(missingChunks) > 0 {
-        return fmt.Errorf("missing chunks: %v", missingChunks)
-    }
+	if len(missingChunks) > 0 {
+		return fmt.Errorf("missing chunks: %v", missingChunks)
+	}
 
-    // Собираем файл
-    outputFile, err := os.Create(outputFilePath)
-    if err != nil {
-        return fmt.Errorf("failed to create output file: %w", err)
-    }
-    defer outputFile.Close()
+	// Собираем файл
+	outputFile, err := os.Create(outputFilePath)
+	if err != nil {
+		return fmt.Errorf("failed to create output file: %w", err)
+	}
+	defer outputFile.Close()
 
-    // Собираем все чанки в один файл
-    for i := 1; i <= totalChunks; i++ {
-        chunkFile := fmt.Sprintf("./data/%s_%d.part", sessionID, i)
-        err := appendChunk(outputFile, chunkFile)
-        if err != nil {
-            return fmt.Errorf("failed to append chunk %s: %w", chunkFile, err)
-        }
-    }
+	// Собираем все чанки в один файл
+	for i := 1; i <= totalChunks; i++ {
+		chunkFile := fmt.Sprintf("./data/%s_%d.part", sessionID, i)
+		err := appendChunk(outputFile, chunkFile)
+		if err != nil {
+			return fmt.Errorf("failed to append chunk %s: %w", chunkFile, err)
+		}
+	}
 
-    return nil
+	return nil
 }
 
 // Вспомогательная функция для записи чанка в выходной файл
@@ -235,4 +236,11 @@ func (f *FileService) GenerateUniqueName(fileName string) string {
 
 func (f *FileService) ChunkExists(sessionID string, chunkID int) (bool, error) {
 	return f.Storage.ChunkExists(sessionID, chunkID)
+}
+
+func (f *FileService) GetStoragePath() (string, error) {
+	if f.LocalPath == "" {
+		return "", fmt.Errorf("storage path is not configured")
+	}
+	return f.LocalPath, nil
 }
