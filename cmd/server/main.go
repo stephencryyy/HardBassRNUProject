@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 
 	"github.com/gorilla/mux"
 )
@@ -16,7 +17,7 @@ import (
 func main() {
 	// Параметры командной строки для порта и пути к хранилищу
 	port := flag.Int("port", 0, "Port for the server (overrides config)")
-	storagePath := flag.String("storage", "", "Path to storage (overrides config)")
+	storagePath := flag.String("storage", "data", "Path to storage (overrides config, default: 'data')")
 	flag.Parse()
 
 	// Загрузка конфигурации
@@ -29,9 +30,29 @@ func main() {
 	if *port != 0 {
 		cfg.Server.Port = *port
 	}
+	// Проверяем наличие переданного пути к хранилищу
 	if *storagePath != "" {
-		cfg.Storage.Path = *storagePath
+		if _, err := os.Stat(*storagePath); os.IsNotExist(err) {
+			log.Printf("Storage path %s does not exist. Falling back to default 'data' directory.", *storagePath)
+			*storagePath = "data"
+		} else {
+			log.Printf("Using provided storage path: %s", *storagePath)
+		}
+	} else {
+		log.Printf("No storage path provided, defaulting to 'data' directory.")
+		*storagePath = "data"
 	}
+
+	// Убедиться, что путь для хранения (либо переданный, либо 'data') существует, если нет - создаем
+	if _, err := os.Stat(*storagePath); os.IsNotExist(err) {
+		log.Printf("Storage path %s does not exist. Creating...", *storagePath)
+		if err := os.MkdirAll(*storagePath, os.ModePerm); err != nil {
+			log.Fatalf("Failed to create storage path %s: %v", *storagePath, err)
+		}
+	}
+
+	// Обновляем конфигурацию с конечным путем
+	cfg.Storage.Path = *storagePath
 
 	// Инициализация сервисов и обработчиков
 	redisClient := storage.NewRedisClient(cfg.Redis.Addr, cfg.Redis.Password, cfg.Redis.DB)
