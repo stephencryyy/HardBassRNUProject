@@ -30,16 +30,23 @@ func NewRedisClient(addr, password string, db int) *RedisClient {
 
 // Сохранение сессии
 func (s *RedisClient) SaveSession(sessionID string, sessionData map[string]interface{}) error {
-	log.Printf("Saving session %s with data: %v", sessionID, sessionData)
-	// Сохранение сессии в Redis...
-	err := s.Client.HMSet(ctx, sessionID, sessionData).Err()
-	if err != nil {
-		log.Printf("Failed to save session %s: %v", sessionID, err)
-		return err
-	}
-	log.Printf("Session %s saved successfully", sessionID)
-	return nil
+    log.Printf("Saving session %s with data: %v", sessionID, sessionData)
+
+    // Convert all values to strings
+    dataToSave := make(map[string]interface{})
+    for key, value := range sessionData {
+        dataToSave[key] = fmt.Sprintf("%v", value)
+    }
+
+    err := s.Client.HMSet(ctx, sessionID, dataToSave).Err()
+    if err != nil {
+        log.Printf("Failed to save session %s: %v", sessionID, err)
+        return err
+    }
+    log.Printf("Session %s saved successfully", sessionID)
+    return nil
 }
+
 
 // Получение числового значения поля сессии
 func (r *RedisClient) GetSessionIntField(sessionID string, field string) (int64, error) {

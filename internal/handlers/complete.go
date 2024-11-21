@@ -2,19 +2,17 @@ package handlers
 
 import (
 	"encoding/json"
-	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/gorilla/mux"
 )
 
 // Обработчик завершения загрузки
 func (h *UploadChunkHandler) CompleteUpload(w http.ResponseWriter, r *http.Request) {
-	// Получаем session_id из URL
+	// Get session_id from URL
 	vars := mux.Vars(r)
 	sessionID := vars["session_id"]
 	log.Printf("Received session_id: %s", sessionID)
@@ -24,100 +22,106 @@ func (h *UploadChunkHandler) CompleteUpload(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Получаем статус загрузки сессии
+	// Update upload progress before checking status
+	err := h.SessionService.UpdateProgress(sessionID)
+	if err != nil {
+		sendErrorResponse(w, http.StatusInternalServerError, 500, "Failed to update upload progress.", err.Error(), "")
+		return
+	}
+
+	// Get session data
 	status, err := h.SessionService.GetUploadStatus(sessionID)
 	if err != nil {
 		sendErrorResponse(w, http.StatusInternalServerError, 500, "Failed to get upload status.", err.Error(), "")
 		return
 	}
 
-	// Проверяем, все ли чанки загружены
-	if status["completed"] == false {
-		missingChunks := status["pending_chunks"].([]int)
-		sendErrorResponse(w, http.StatusConflict, 409, "File upload incomplete. Some chunks are still missing.", map[string]interface{}{
-			"missing_chunks": missingChunks,
-		}, "Upload the missing chunks before completing the session.")
+	// Extract and validate 'completed' status
+	completedInterface, ok := status["completed"]
+	if !ok {
+		sendErrorResponse(w, http.StatusInternalServerError, 500, "Missing 'completed' status.", nil, "")
+		return
+	}
+	completed, ok := completedInterface.(bool)
+	if !ok {
+		sendErrorResponse(w, http.StatusInternalServerError, 500, "Invalid 'completed' status type.", nil, "")
 		return
 	}
 
-	// Получаем имя файла из сессии
-	fileName, ok := status["file_name"].(string)
+	// Retrieve and assert 'status' string
+	statusInterface, ok := status["status"]
+	if !ok {
+		sendErrorResponse(w, http.StatusInternalServerError, 500, "Missing 'status'.", nil, "")
+		return
+	}
+	statusStr, ok := statusInterface.(string)
+	if !ok {
+		sendErrorResponse(w, http.StatusInternalServerError, 500, "Invalid 'status' type.", nil, "")
+		return
+	}
+
+	if !completed || statusStr != "completed" {
+		h.cleanupSession(sessionID)
+		sendErrorResponse(w, http.StatusConflict, 409, "Upload incomplete or session is in progress. Session data has been cleaned up.", nil, "")
+		return
+	}
+
+	// Retrieve and assert 'file_name'
+	fileNameInterface, ok := status["file_name"]
+	if !ok {
+		sendErrorResponse(w, http.StatusInternalServerError, 500, "Missing 'file_name'.", nil, "")
+		return
+	}
+	fileName, ok := fileNameInterface.(string)
 	if !ok || fileName == "" {
-		sendErrorResponse(w, http.StatusInternalServerError, 500, "File name missing in session data.", nil, "")
+		sendErrorResponse(w, http.StatusInternalServerError, 500, "Invalid 'file_name'.", nil, "")
 		return
 	}
 
-	// Убедимся, что папка для загрузок существует сохраняем куда угодно через флаг
-	uploadDir := "./data"
-	if err := os.MkdirAll(uploadDir, os.ModePerm); err != nil {
+	// Specify the output file path
+	outputFilePath := filepath.Join("./uploads", fileName)
+
+	// Ensure the uploads directory exists
+	if err := os.MkdirAll("./uploads", os.ModePerm); err != nil {
 		sendErrorResponse(w, http.StatusInternalServerError, 500, "Failed to create uploads directory.", err.Error(), "")
 		return
 	}
 
-	// Генерируем уникальное имя файла
-	uniqueFileName, err := GenerateUniqueFileName(uploadDir, fileName)
+	// Assemble the file
+	err = h.SessionService.GetFileService().AssembleChunks(sessionID, outputFilePath)
 	if err != nil {
-		sendErrorResponse(w, http.StatusInternalServerError, 500, "File name nothing .", err.Error(), "")
-		return
-	}
-	outputPath := filepath.Join(uploadDir, uniqueFileName)
-
-	// Все чанки загружены, теперь собираем файл
-	err = h.SessionService.GetFileService().AssembleChunks(sessionID, outputPath)
-	if err != nil {
-		sendErrorResponse(w, http.StatusInternalServerError, 500, "Failed to assemble chunks.", err.Error(), "")
+		h.cleanupSession(sessionID)
+		sendErrorResponse(w, http.StatusInternalServerError, 500, "Failed to assemble chunks. Session data has been cleaned up.", err.Error(), "")
 		return
 	}
 
-	// Завершаем сессию
-	err = h.SessionService.UpdateProgress(sessionID, status["file_size"].(int64))
-	if err != nil {
-		sendErrorResponse(w, http.StatusInternalServerError, 500, "Failed to update session progress.", err.Error(), "")
-		return
-	}
-
-	// Удаляем временные файлы
+	// Удаляем файлы чанков
 	err = h.SessionService.GetFileService().DeleteChunks(sessionID)
 	if err != nil {
-		sendErrorResponse(w, http.StatusInternalServerError, 500, "Failed to delete session.", err.Error(), "")
+		log.Printf("Failed to delete chunks for session %s: %v", sessionID, err)
 		return
 	}
 
-	// Ответ об успешном завершении
+	// Return success response
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"status":      "success",
-		"session_id":  sessionID,
-		"message":     "File upload completed successfully.",
-		"output_file": outputPath,
+		"status":     "success",
+		"session_id": sessionID,
+		"message":    "File upload completed successfully.",
 	})
 }
 
-// GenerateUniqueFileName проверяет, существует ли файл, и добавляет суффикс, если нужно.
-func GenerateUniqueFileName(directory, fileName string) (string, error) {
-	// Разделяем имя файла и расширение
-	baseName := strings.TrimSuffix(fileName, filepath.Ext(fileName))
-	extension := filepath.Ext(fileName)
-	uniqueName := fileName
-	counter := 1
+func (h *UploadChunkHandler) cleanupSession(sessionID string) {
+	// Удаляем файлы чанков
+	err := h.SessionService.GetFileService().DeleteChunks(sessionID)
+	if err != nil {
+		log.Printf("Failed to delete chunks for session %s: %v", sessionID, err)
+	}
 
-	for {
-		// Формируем путь к файлу
-		filePath := filepath.Join(directory, uniqueName)
-
-		// Проверяем, существует ли файл
-		_, err := os.Stat(filePath)
-		if os.IsNotExist(err) {
-			// Файл не существует, можно использовать это имя
-			return uniqueName, nil
-		} else if err != nil {
-			// Произошла какая-то другая ошибка при доступе к файлу
-			return "", err
-		}
-
-		// Если файл существует, добавляем суффикс и проверяем снова
-		uniqueName = fmt.Sprintf("%s(%d)%s", baseName, counter, extension)
-		counter++
+	// Удаляем данные сессии из Redis
+	err = h.SessionService.DeleteSession(sessionID)
+	if err != nil {
+		log.Printf("Failed to delete session data for session %s: %v", sessionID, err)
 	}
 }
