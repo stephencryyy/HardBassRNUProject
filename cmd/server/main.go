@@ -21,16 +21,23 @@ func main() {
 	flag.Parse()
 
 	// Загрузка конфигурации
-	cfg, err := config.LoadConfig("config/config.yaml")
+	cfgPath := "config/config.yaml"
+	cfg, err := config.LoadConfig(cfgPath)
 	if err != nil {
 		log.Fatalf("Error loading config: %v", err)
 	}
 
-	// Переопределение значений конфигурации, если заданы аргументы
+	// После обработки флагов командной строки в сервере
 	if *port != 0 {
 		cfg.Server.Port = *port
+
+		// Сохраняем обновленную конфигурацию обратно в файл
+		err = config.SaveConfig(cfgPath, cfg)
+		if err != nil {
+			log.Fatalf("Error saving updated config: %v", err)
+		}
 	}
-	// Проверяем наличие переданного пути к хранилищу
+
 	if *storagePath != "" {
 		if _, err := os.Stat(*storagePath); os.IsNotExist(err) {
 			log.Printf("Storage path %s does not exist. Falling back to default 'data' directory.", *storagePath)
@@ -50,8 +57,6 @@ func main() {
 			log.Fatalf("Failed to create storage path %s: %v", *storagePath, err)
 		}
 	}
-
-	// Обновляем конфигурацию с конечным путем
 	cfg.Storage.Path = *storagePath
 
 	// Инициализация сервисов и обработчиков

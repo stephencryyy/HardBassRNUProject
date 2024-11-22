@@ -16,6 +16,8 @@ import (
 	"strconv"
 	"sync"
 	"time"
+
+	"BASProject/config" // Импортируем пакет config
 )
 
 func main() {
@@ -24,13 +26,43 @@ func main() {
 	flag.Parse()
 
 	filePath := *fileFlag
+
+	// Определяем флаги командной строки
+	portFlag := flag.Int("port", 0, "Port for the server (overrides config)")
+	storageFlag := flag.String("storage", "", "Path to storage (overrides config)")
+	flag.Parse()
+
+	// Загрузка конфигурации из файла
+	cfgPath := "config/config.yaml"
+	cfg, err := config.LoadConfig(cfgPath)
+	if err != nil {
+		log.Fatalf("Error loading config: %v", err)
+	}
+
+	// Если значение порта передано через командную строку, то используем его, иначе берем из конфига
+	port := cfg.Server.Port
+	if *portFlag != 0 {
+		port = *portFlag
+	}
+
+	// Если путь к хранилищу передан через командную строку, то используем его, иначе берем из конфига
+	storagePath := cfg.Storage.Path
+	if *storageFlag != "" {
+		storagePath = *storageFlag
+	}
+
+	// Используем обновленные значения порта и пути к хранилищу
+	serverURL := fmt.Sprintf("http://localhost:%d", port)
+	fmt.Printf("Server will start at %s\n", serverURL)
+	fmt.Printf("Storage path is set to %s\n", storagePath)
+
 	// Создание сессии
 	fileHash, err := CalculateFileHash(filePath)
 	if err != nil {
 		log.Fatalf("Error calculating file hash: %v", err)
 	}
 
-	chunkSize, err := createSession(filePath, fileHash)
+	chunkSize, err := createSession(serverURL, filePath, fileHash)
 	if err != nil {
 		log.Fatalf("Error creating session: %v", err)
 	}
@@ -65,7 +97,7 @@ func main() {
 		go func() {
 			defer wg.Done()
 			for chunk := range chunkChan {
-				err := sendChunk(fileHash, chunk.data, chunk.chunkID)
+				err := sendChunk(serverURL, fileHash, chunk.data, chunk.chunkID)
 				if err != nil {
 					log.Printf("Error sending chunk %d: %v", chunk.chunkID, err)
 					continue
@@ -94,7 +126,7 @@ func main() {
 
 	fmt.Printf("File uploaded in %v\n", time.Since(begin))
 	// Завершаем передачу
-	err = completeUpload(fileHash)
+	err = completeUpload(serverURL, fileHash)
 	if err != nil {
 		log.Fatalf("Error completing upload: %v", err)
 	}
@@ -106,8 +138,8 @@ type chunkData struct {
 	data    []byte
 }
 
-// createSession отправляет запрос на создание сессии и получает GUID
-func createSession(filePath string, fileHash string) (int64, error) {
+// createSession отправляет запрос на создание сессии и получает размер чанка
+func createSession(serverURL, filePath, fileHash string) (int64, error) {
 	fileInfo, err := os.Stat(filePath)
 	if err != nil {
 		log.Fatalf("Error getting file info: %v", err)
@@ -127,7 +159,8 @@ func createSession(filePath string, fileHash string) (int64, error) {
 	}
 
 	// Отправка запроса на старт сессии
-	resp, err := http.Post("http://localhost:6382/upload/start", "application/json", bytes.NewReader(requestBody))
+	url := fmt.Sprintf("%s/upload/start", serverURL)
+	resp, err := http.Post(url, "application/json", bytes.NewReader(requestBody))
 	if err != nil {
 		return 0, fmt.Errorf("failed to create session: %v", err)
 	}
@@ -151,8 +184,8 @@ func createSession(filePath string, fileHash string) (int64, error) {
 }
 
 // sendChunk отправляет чанк на сервер
-func sendChunk(fileHash string, data []byte, chunkID int) error {
-	url := fmt.Sprintf("http://localhost:6382/upload/%s/chunk", fileHash)
+func sendChunk(serverURL, fileHash string, data []byte, chunkID int) error {
+	url := fmt.Sprintf("%s/upload/%s/chunk", serverURL, fileHash)
 
 	// Вычисляем SHA-256 для данных чанка
 	hash := sha256.Sum256(data)
@@ -184,17 +217,21 @@ func sendChunk(fileHash string, data []byte, chunkID int) error {
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("server returned non-OK status: %s", resp.Status)
+		return fmt.Errorf("failed to send chunk: %v", err)
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("server returned non-OK status: %v", resp.Status)
+	}
 
 	log.Printf("Chunk %d sent successfully", chunkID)
 	return nil
 }
 
 // completeUpload отправляет запрос на завершение загрузки
-func completeUpload(fileHash string) error {
-	url := fmt.Sprintf("http://localhost:6382/upload/complete/%s", fileHash)
+func completeUpload(serverURL, fileHash string) error {
+	url := fmt.Sprintf("%s/upload/complete/%s", serverURL, fileHash)
 
 	// Отправляем запрос на завершение сессии
 	resp, err := http.Post(url, "application/json", nil)
@@ -233,30 +270,4 @@ func CalculateFileHash(filePath string) (string, error) {
 	}
 
 	return hex.EncodeToString(hash.Sum(nil)), nil
-}
-
-type UploadStatusResponse struct {
-	MissingChunks []int  `json:"missing_chunks"`
-	Status        string `json:"status"`
-}
-
-// CheckUploadStatus запрашивает статус загрузки у сервера.
-func CheckUploadStatus(serverURL, fileHash string) (*UploadStatusResponse, error) {
-	url := fmt.Sprintf("%s/upload/status/%s", serverURL, fileHash)
-	resp, err := http.Get(url)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("server returned status: %s", resp.Status)
-	}
-
-	var status UploadStatusResponse
-	if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
-		return nil, err
-	}
-
-	return &status, nil
 }

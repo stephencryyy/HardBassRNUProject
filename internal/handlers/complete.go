@@ -14,7 +14,7 @@ import (
 
 func (h *UploadChunkHandler) CompleteUpload(w http.ResponseWriter, r *http.Request) {
 
-	// Get session_id from URL
+	// Получаем session_id из URL
 	vars := mux.Vars(r)
 	sessionID := vars["session_id"]
 	log.Printf("Received session_id: %s", sessionID)
@@ -24,21 +24,21 @@ func (h *UploadChunkHandler) CompleteUpload(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Update upload progress before checking status
+	// Обновляем прогресс загрузки перед проверкой статуса
 	err := h.SessionService.UpdateProgress(sessionID)
 	if err != nil {
 		sendErrorResponse(w, http.StatusInternalServerError, 500, "Failed to update upload progress.", err.Error(), "")
 		return
 	}
 
-	// Get session data
+	// Получаем данные сессии
 	status, err := h.SessionService.GetUploadStatus(sessionID)
 	if err != nil {
 		sendErrorResponse(w, http.StatusInternalServerError, 500, "Failed to get upload status.", err.Error(), "")
 		return
 	}
 
-	// Extract and validate 'completed' status
+	// Извлекаем и проверяем статус 'completed'
 	completedInterface, ok := status["completed"]
 	if !ok {
 		sendErrorResponse(w, http.StatusInternalServerError, 500, "Missing 'completed' status.", nil, "")
@@ -50,7 +50,7 @@ func (h *UploadChunkHandler) CompleteUpload(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Retrieve and assert 'status' string
+	// Извлекаем и проверяем строку 'status'
 	statusInterface, ok := status["status"]
 	if !ok {
 		sendErrorResponse(w, http.StatusInternalServerError, 500, "Missing 'status'.", nil, "")
@@ -68,7 +68,7 @@ func (h *UploadChunkHandler) CompleteUpload(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Retrieve and assert 'file_name'
+	// Извлекаем и проверяем 'file_name'
 	fileNameInterface, ok := status["file_name"]
 	if !ok {
 		sendErrorResponse(w, http.StatusInternalServerError, 500, "Missing 'file_name'.", nil, "")
@@ -82,9 +82,8 @@ func (h *UploadChunkHandler) CompleteUpload(w http.ResponseWriter, r *http.Reque
 
 	// Получаем путь для сборки полного файла из FileService через интерфейсный метод
 	storagePath, err := h.SessionService.GetFileService().GetStoragePath()
-
 	if err != nil {
-		sendErrorResponse(w, http.StatusInternalServerError, 500, "Failpath not find.", nil, "")
+		sendErrorResponse(w, http.StatusInternalServerError, 500, "Failed to retrieve storage path.", nil, "")
 		return
 	}
 
@@ -98,13 +97,13 @@ func (h *UploadChunkHandler) CompleteUpload(w http.ResponseWriter, r *http.Reque
 	// Задаём путь к выходному файлу
 	outputFilePath := filepath.Join(storagePath, uniqueFileName)
 
-	// Ensure the uploads directory exists
+	// Убеждаемся, что директория для загрузок существует
 	if err := os.MkdirAll(storagePath, os.ModePerm); err != nil {
 		sendErrorResponse(w, http.StatusInternalServerError, 500, "Failed to create uploads directory.", err.Error(), "")
 		return
 	}
 
-	// Assemble the file
+	// Собираем файл
 	err = h.SessionService.GetFileService().AssembleChunks(sessionID, outputFilePath)
 	if err != nil {
 		h.cleanupSession(sessionID)
@@ -116,10 +115,9 @@ func (h *UploadChunkHandler) CompleteUpload(w http.ResponseWriter, r *http.Reque
 	err = h.SessionService.GetFileService().DeleteChunks(sessionID)
 	if err != nil {
 		log.Printf("Failed to delete chunks for session %s: %v", sessionID, err)
-		return
 	}
 
-	// Return success response
+	// Возвращаем успешный ответ
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]interface{}{
