@@ -105,7 +105,7 @@ func TestCompleteUpload_Success(t *testing.T) {
 				"file_size": int64(1024),
 			}, nil
 		},
-		UpdateProgressFunc: func(sessionID string, fileSize int64) error {
+		UpdateProgressFunc: func(sessionID string) error {
 			return nil
 		},
 		FileService: &services.FileServiceMock{

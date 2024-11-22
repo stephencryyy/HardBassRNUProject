@@ -10,6 +10,7 @@ type FileServiceMock struct {
 	AssembleChunksFunc   func(sessionID string, outputFilePath string) error
 	DeleteChunksFunc     func(sessionID string) error
 	ChunkExistsFunc      func(sessionID string, chunkID int) (bool, error)
+	GetStoragePathFunc   func() string
 }
 
 // Реализация методов интерфейса IFileService
@@ -21,6 +22,10 @@ func (m *FileServiceMock) DeleteChunks(sessionID string) error {
 		return m.DeleteChunksFunc(sessionID)
 	}
 	return nil
+}
+func (m *FileServiceMock) GetStoragePath() (string, error) {
+    // Return a mock storage path
+    return "/mock/storage/path", nil
 }
 
 func (m *FileServiceMock) ChunkExists(sessionID string, chunkID int) (bool, error) {
@@ -57,18 +62,19 @@ func (m *FileServiceMock) CalculateChecksum(data []byte) string {
 }
 
 // Реализация AssembleChunks
+
 func (m *FileServiceMock) AssembleChunks(sessionID string, outputFilePath string) error {
-	if m.AssembleChunksFunc != nil {
-		return m.AssembleChunksFunc(sessionID, outputFilePath)
-	}
-	return nil
+    if m.AssembleChunksFunc != nil {
+        return m.AssembleChunksFunc(sessionID, outputFilePath)
+    }
+    return nil
 }
 
 // SessionServiceMock — структура для мокирования ISessionService в тестах.
 type SessionServiceMock struct {
 	CreateSessionFunc   func(fileName string, fileSize int64, fileHash string) (int64, error)
 	GetUploadStatusFunc func(sessionID string) (map[string]interface{}, error)
-	UpdateProgressFunc  func(sessionID string, uploadedSize int64) error
+	UpdateProgressFunc  func(sessionID string) error
 	FileService         IFileService
 	DeleteSessionFunc   func(sessionID string) error
 }
@@ -94,9 +100,9 @@ func (m *SessionServiceMock) GetUploadStatus(sessionID string) (map[string]inter
 }
 
 // Реализация метода UpdateProgress
-func (m *SessionServiceMock) UpdateProgress(sessionID string, uploadedSize int64) error {
+func (m *SessionServiceMock) UpdateProgress(sessionID string) error {
 	if m.UpdateProgressFunc != nil {
-		return m.UpdateProgressFunc(sessionID, uploadedSize)
+		return m.UpdateProgressFunc(sessionID)
 	}
 	return errors.New("UpdateProgressFunc not implemented")
 }
