@@ -17,7 +17,7 @@ import (
 func main() {
 	// Параметры командной строки для порта и пути к хранилищу
 	port := flag.Int("port", 0, "Port for the server (overrides config)")
-	storagePath := flag.String("storage", "data", "Path to storage (overrides config, default: 'data')")
+	storagePath := flag.String("storage", "", "Path to storage (overrides config, default: 'data')")
 	flag.Parse()
 
 	// Загрузка конфигурации
@@ -38,25 +38,23 @@ func main() {
 		}
 	}
 
-	if *storagePath != "" {
-		if _, err := os.Stat(*storagePath); os.IsNotExist(err) {
-			log.Printf("Storage path %s does not exist. Falling back to default 'data' directory.", *storagePath)
-			*storagePath = "data"
-		} else {
-			log.Printf("Using provided storage path: %s", *storagePath)
-		}
-	} else {
+	// После обработки флагов командной строки в сервере
+	if *storagePath == "" {
+		// Если путь не указан, используем 'data'
 		log.Printf("No storage path provided, defaulting to 'data' directory.")
 		*storagePath = "data"
+	} else {
+		log.Printf("Using provided storage path: %s", *storagePath)
 	}
 
-	// Убедиться, что путь для хранения (либо переданный, либо 'data') существует, если нет - создаем
+	// Проверяем, существует ли путь, и создаём его, если нет
 	if _, err := os.Stat(*storagePath); os.IsNotExist(err) {
 		log.Printf("Storage path %s does not exist. Creating...", *storagePath)
 		if err := os.MkdirAll(*storagePath, os.ModePerm); err != nil {
 			log.Fatalf("Failed to create storage path %s: %v", *storagePath, err)
 		}
 	}
+
 	cfg.Storage.Path = *storagePath
 
 	// Инициализация сервисов и обработчиков

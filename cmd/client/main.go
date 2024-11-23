@@ -16,42 +16,37 @@ import (
 	"strconv"
 	"sync"
 	"time"
-
-	"BASProject/config" // Importing the config package
 )
 
 func main() {
 	// Define command-line flags
-	fileFlag := flag.String("file", "example.txt", "Path to the file")
+	fileFlag := flag.String("file", "", "Path to the file")
 	portFlag := flag.Int("port", 0, "Port for the server (overrides config)")
-	storageFlag := flag.String("storage", "", "Path to storage (overrides config)")
+	// storageFlag := flag.String("storage", "", "Path to storage (overrides config)")
 	flag.Parse()
+
 
 	filePath := *fileFlag
 
-	// Load configuration from file
-	cfgPath := "config/config.yaml"
-	cfg, err := config.LoadConfig(cfgPath)
-	if err != nil {
-		log.Fatalf("Error loading config: %v", err)
+	if filePath == "" {
+		log.Fatal("Please provide a file path using the -file flag.")
 	}
 
 	// Use command-line port if provided, else use config
-	port := cfg.Server.Port
-	if *portFlag != 0 {
-		port = *portFlag
+	if *portFlag == 0 {
+		log.Fatal("Please provide a port using the -port flag.")
 	}
+	port := *portFlag
 
-	// Use command-line storage path if provided, else use config
-	storagePath := cfg.Storage.Path
-	if *storageFlag != "" {
-		storagePath = *storageFlag
-	}
+	// if *storageFlag == "" {
+	// 	log.Fatal("Please provide a storage path using the -storage flag.")
+	// }
+
 
 	// Build server URL
 	serverURL := fmt.Sprintf("http://localhost:%d", port)
 	fmt.Printf("Server will start at %s\n", serverURL)
-	fmt.Printf("Storage path is set to %s\n", storagePath)
+	// fmt.Printf("Storage path is set to %s\n", *storageFlag)
 
 	// Calculate file hash
 	fileHash, err := CalculateFileHash(filePath)
